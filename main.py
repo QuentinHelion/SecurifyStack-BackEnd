@@ -14,27 +14,24 @@ def checklist_get():
     """
     :return: ping result
     """
-    from application.interface.controllers.crtl_json import JsonCrtl
+    from application.interfaces.controllers.crtl_json import JsonCrtl
 
-    read_json()
+    json_crtl = JsonCrtl("infrastructure/persistence/checklist.json")
+    response = json_crtl.read()
 
     return response
+
 
 @app.route('/checklist/update', methods=['GET'])
 def checklist_update():
     """
-    :return: bool depend to success of checklist update
+    :return: bool depend on success of checklist update
     """
-    args = request.args.get('checklist', None)
-    if args is None or args == '':
-        response = make_response("Missing args")
-        response.status_code = 400
 
-    pinger = Pinger(
-        addr=addr
-    )
-    ping_result = pinger.ping()
-    response = make_response(jsonify(ping_result))
+    response = "/checklist/update"
+
+    return response
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

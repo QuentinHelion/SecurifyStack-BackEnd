@@ -3,6 +3,7 @@ Json usage presenter
 """
 import json
 
+
 class JsonPrst:
     def __init__(self, json_file_path):
         self.json_file_path = json_file_path
@@ -21,4 +22,3 @@ class JsonPrst:
         """
         with open(self.json_file_path, 'w') as file:
             return json.dump(data, file)
-
