@@ -1,0 +1,12 @@
+[
+    {
+        "name": "Task1",
+        "description": "bla bla bla...",
+        "state": false
+    },
+    {
+        "name": "Task2",
+        "description": "ble ble ble...",
+        "state": true
+    }
+]
