@@ -26,7 +26,7 @@ def checklist_get():
     return response, 200
 
 
-@app.route('/checklist/update', methods=['GET'])
+@app.route('/checklist/update', methods=['PUT'])
 def checklist_update():
     """
     This route permit to update checklist
