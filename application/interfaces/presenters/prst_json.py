@@ -23,5 +23,5 @@ class JsonPrst:
         Permit update json file
         :return: json file update result
         """
-        with open(self.json_file_path, 'w', encoding="utf-8") as file:
-            return json.dump(data, file)
+        with open(self.json_file_path, 'wb') as file:
+            return bool(file.write(data))

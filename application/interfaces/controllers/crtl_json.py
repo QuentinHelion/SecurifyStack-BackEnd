@@ -22,7 +22,7 @@ class JsonCrtl:
     def update(self, value):
         """
         Update json
-        :return: bool depent of execution result
+        :return: bool depend on execution result
         """
         if value is None or value == "":
             print("JsonCrtl | Error | Value empty")

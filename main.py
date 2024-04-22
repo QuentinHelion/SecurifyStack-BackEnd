@@ -2,12 +2,15 @@
 Main app file, all api route are declared there
 """
 
-import flask
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from application.interfaces.controllers.crtl_json import JsonCrtl
+from infrastructure.data.args import Args
 
-app = flask.Flask(__name__)
+args_checker = Args()
+
+app = Flask(__name__)
 CORS(app)
 
 
@@ -20,18 +23,39 @@ def checklist_get():
     json_crtl = JsonCrtl("infrastructure/persistence/checklist.json")
     response = json_crtl.read()
 
-    return response
+    return response, 200
 
 
 @app.route('/checklist/update', methods=['GET'])
 def checklist_update():
     """
-    :return: bool depend on success of checklist update
+    This route permit to update checklist
+    Take as arg checklist file
+    :return: bool depend on success of checklist updating
     """
+    file = request.files["checklist"]
 
-    response = "/checklist/update"
+    if not args_checker.args_file(file):
+        return jsonify({
+            "status": "400",
+            "message": "Missing args"
+        }), 400
 
-    return response
+    if 'checklist' not in request.files:
+        return jsonify({
+            "status": "400",
+            "message": "Missing args"
+        }), 400
+
+    print("Checklist Update | Info | File ok, starting...")
+
+    file_content = file.read()
+    print(file_content)
+
+    json_crtl = JsonCrtl("infrastructure/persistence/checklist.json")
+    response = json_crtl.update(file_content)
+
+    return jsonify(response), 200
 
 
 if __name__ == '__main__':
