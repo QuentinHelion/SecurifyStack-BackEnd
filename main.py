@@ -2,10 +2,12 @@
 Main app file, all api route are declared there
 """
 
-from flask import Flask, jsonify, request, make_response
+import flask
 from flask_cors import CORS
 
-app = Flask(__name__)
+from application.interfaces.controllers.crtl_json import JsonCrtl
+
+app = flask.Flask(__name__)
 CORS(app)
 
 
@@ -14,7 +16,6 @@ def checklist_get():
     """
     :return: ping result
     """
-    from application.interfaces.controllers.crtl_json import JsonCrtl
 
     json_crtl = JsonCrtl("infrastructure/persistence/checklist.json")
     response = json_crtl.read()

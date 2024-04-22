@@ -8,7 +8,7 @@ from infrastructure.data.files_manager import FilesManager
 
 class JsonCrtl:
     """
-    
+    Json controller class
     """
     def __init__(self, json_file_path):
         self.path = json_file_path

@@ -20,7 +20,7 @@ class FilesManager:
         """
         create file
         """
-        with open(file_path, 'w'):
+        with open(file_path, 'w', encoding="utf-8"):
             pass  # Do nothing, just creating the file
 
         return self.exist(file_path)
