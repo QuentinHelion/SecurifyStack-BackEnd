@@ -33,15 +33,21 @@ def checklist_update():
     Take as arg checklist file
     :return: bool depend on success of checklist updating
     """
-    file = request.files["checklist"]
 
-    if not args_checker.args_file(file):
+    for x in request.files:
+        print(x)
+
+    if 'checklist' not in request.files:
+        print("Checklist Update | Error | Missing args")
         return jsonify({
             "status": "400",
             "message": "Missing args"
         }), 400
 
-    if 'checklist' not in request.files:
+    file = request.files["checklist"]
+
+    if not args_checker.args_file(file):
+        print("Checklist Update | Error | Missing args")
         return jsonify({
             "status": "400",
             "message": "Missing args"
@@ -53,9 +59,10 @@ def checklist_update():
     print(file_content)
 
     json_crtl = JsonCrtl("infrastructure/persistence/checklist.json")
-    response = json_crtl.update(file_content)
 
-    return jsonify(response), 200
+    response = jsonify(json_crtl.update(file_content))
+
+    return response, 200
 
 
 if __name__ == '__main__':

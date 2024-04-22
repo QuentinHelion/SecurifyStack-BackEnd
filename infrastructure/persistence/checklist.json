@@ -1,12 +1,1 @@
-[
-    {
-        "name": "Task1",
-        "description": "bla bla bla...",
-        "state": false
-    },
-    {
-        "name": "Task2",
-        "description": "ble ble ble...",
-        "state": true
-    }
-]
+[{"description":"bla bla bla...","name":"Task1","state":true},{"description":"ble ble ble...","name":"Task2","state":true}]
