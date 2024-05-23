@@ -64,6 +64,18 @@ def checklist_update():
 
     return response, 200
 
+@app.route('/stats/proxmox', methods=['GET'])
+def stats_proxmox():
+    """
+    :return: ping result
+    """
+
+    json_crtl = JsonCrtl("infrastructure/persistence/stats.json")
+    response = json_crtl.read()
+
+    return response, 200
+
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
