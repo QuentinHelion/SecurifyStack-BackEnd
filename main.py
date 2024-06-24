@@ -89,14 +89,15 @@ def login():
     :return: auth token
     """
     ldaps_controller = LdapsController(
-        server_address=env_reader.get("LDAP_SERVER"),
+        server_address=env_reader.get("LDAPS_SERVER"),
         path_to_cert_file="infrastructure/persistence/certificats/ssrootca.cer",
         port=env_reader.get("LDAPS_SERVER_PORT")
+
     )
 
     result = ldaps_controller.connect(
-        CN=request.args["CN"],
-        DC=request.args["DC"],
+        CN=[request.args["CN"], "Users"],
+        DC=[request.args["DC"], "corp"],
         password=request.args["password"]
     )
 

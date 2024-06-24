@@ -17,19 +17,20 @@ class LdapsController:
         """
         :return: user ldaps request
         """
-        if isinstance(CN):
+        if isinstance(CN, list):
             cn_str = "CN="
             delimiter = ",CN="
             cn_str += delimiter.join(map(str, CN))
         else:
-            cn_str = "CN="
+            cn_str = f"CN={CN}"
 
-        if isinstance(DC):
-            dc_str = "DC="
+
+        if isinstance(DC, list):
+            dc_str = ",DC="
             delimiter = ",DC="
             dc_str += delimiter.join(map(str, DC))
         else:
-            dc_str = "DC="
+            dc_str = f",DC={DC}"
 
         return cn_str + dc_str
 
@@ -37,6 +38,7 @@ class LdapsController:
         """
         Connects to the LDAP server
         """
+        print(self.set_request_user(CN, DC))
         return self.presenter.connect(
             user=self.set_request_user(CN, DC),
             password=password
