@@ -1,8 +1,14 @@
+"""
+Ldaps Controller interface
+"""
+
 from application.interfaces.presenters.ldaps_presenter import LdapsPresenter
 
 
 class LdapsController:
-
+    """
+    Ldaps Controller interface
+    """
     def __init__(self, server_address, path_to_cert_file, port=636):
         self.presenter = LdapsPresenter(
             server_address=server_address,

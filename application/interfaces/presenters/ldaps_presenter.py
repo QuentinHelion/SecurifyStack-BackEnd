@@ -1,10 +1,16 @@
+"""
+Presenter for LDAP Server
+"""
+
 from ldap3 import Server, Connection, ALL, Tls
 import ssl
+
 
 class LdapsPresenter:
     """
     LdapsPresenter provides access to the LDAP server
     """
+
     def __init__(self, server_address, path_to_cert_file, port=636):
         self.port = port
         self.server_address = server_address
