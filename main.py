@@ -38,6 +38,7 @@ def before_request():
                 })
             )
 
+
 @app.route('/login', methods=['GET'])
 def login():
     """
@@ -71,6 +72,7 @@ def login():
         "status": "200",
         "message": token
     }), 200
+
 
 @app.route('/disconnect', methods=['GET'])
 def disconnect():
