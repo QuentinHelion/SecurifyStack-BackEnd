@@ -2,8 +2,9 @@
 Presenter for LDAP Server
 """
 
-from ldap3 import Server, Connection, ALL, Tls
 import ssl
+from ldap3 import Server, Connection, ALL, Tls
+from ldap3.core.exceptions import LDAPSocketOpenError, LDAPBindError, LDAPException
 
 
 class LdapsPresenter:
@@ -26,7 +27,13 @@ class LdapsPresenter:
             version=version,
             ca_certs_file=self.cert_file,
         )
-        self.server = Server(self.server_address, port=self.port, use_ssl=True, tls=tls_configuration, get_info=ALL)
+        self.server = Server(
+            self.server_address,
+            port=self.port,
+            use_ssl=True,
+            tls=tls_configuration,
+            get_info=ALL
+        )
 
     def connect(self, user, password):
         """
@@ -41,7 +48,11 @@ class LdapsPresenter:
                 result = True
             conn.unbind()
 
-        except Exception as e:
-            print(f"Error: {e}")
+        except LDAPBindError as e:
+            print(f"LDAP bind error: {e}")
+        except LDAPSocketOpenError as e:
+            print(f"LDAP socket open error: {e}")
+        except LDAPException as e:
+            print(f"LDAP exception: {e}")
 
         return result

@@ -9,6 +9,7 @@ class LdapsController:
     """
     Ldaps Controller interface
     """
+
     def __init__(self, server_address, path_to_cert_file, port=636):
         self.presenter = LdapsPresenter(
             server_address=server_address,
@@ -17,36 +18,33 @@ class LdapsController:
         )
         self.presenter.set_server()
 
-
     @staticmethod
-    def set_request_user(CN, DC):
+    def set_request_user(cn, dc):
         """
         :return: user ldaps request
         """
-        if isinstance(CN, list):
+        if isinstance(cn, list):
             cn_str = "CN="
             delimiter = ",CN="
-            cn_str += delimiter.join(map(str, CN))
+            cn_str += delimiter.join(map(str, cn))
         else:
-            cn_str = f"CN={CN}"
+            cn_str = f"CN={cn}"
 
-
-        if isinstance(DC, list):
+        if isinstance(dc, list):
             dc_str = ",DC="
             delimiter = ",DC="
-            dc_str += delimiter.join(map(str, DC))
+            dc_str += delimiter.join(map(str, dc))
         else:
-            dc_str = f",DC={DC}"
+            dc_str = f",DC={dc}"
 
         return cn_str + dc_str
 
-    def connect(self, CN, DC, password):
+    def connect(self, cn, dc, password):
         """
         Connects to the LDAP server
         """
-        print(self.set_request_user(CN, DC))
+        print(self.set_request_user(cn, dc))
         return self.presenter.connect(
-            user=self.set_request_user(CN, DC),
+            user=self.set_request_user(cn, dc),
             password=password
         )
-

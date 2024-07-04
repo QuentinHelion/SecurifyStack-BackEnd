@@ -1,3 +1,7 @@
+"""
+This file contain function to generate a token
+"""
+
 import random
 import string
 

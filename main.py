@@ -51,8 +51,8 @@ def login():
     )
 
     result = ldaps_controller.connect(
-        CN=[request.args["CN"], "Users"],
-        DC=[request.args["DC"], "corp"],
+        cn=[request.args["cn"], "Users"],
+        dc=[request.args["dc"], "corp"],
         password=request.args["password"]
     )
 
@@ -70,7 +70,20 @@ def login():
     return jsonify({
         "status": "200",
         "message": token
-    }), 400
+    }), 200
+
+@app.route('/disconnect', methods=['GET'])
+def disconnect():
+    """
+    delete user token from USERS_TOKEN array
+    """
+    token = request.args["token"]
+    USERS_TOKENS.remove(token)
+    return jsonify({
+        "status": "200",
+        "message": "Successfully disconnected"
+    }), 200
+
 
 @app.route('/checklist/get', methods=['GET'])
 def checklist_get():
