@@ -4,7 +4,8 @@ Main app file, all api route are declared there
 
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-
+import os
+import subprocess
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
 from infrastructure.data.args import Args
@@ -149,6 +150,90 @@ def stats_proxmox():
 
     return response, 200
 
+def write_tfvars_file(terraform_script_path, tfvars):
+    tfvars_content = '\n'.join([f'{key} = "{value}"' if isinstance(value, str) else f'{key} = {value}' for key, value in tfvars.items()])
+    tfvars_file_path = os.path.join('/root/TerraformCode', terraform_script_path, 'terraform.tfvars')
+    with open(tfvars_file_path, 'w') as tfvars_file:
+        tfvars_file.write(tfvars_content)
+
+def run_terraform_command(terraform_script_path):
+    command = f'cd /root/TerraformCode/{terraform_script_path} && terraform init && terraform plan && terraform apply -auto-approve'
+    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    output, error = process.communicate()
+    return output.decode('utf-8'), error.decode('utf-8')
+
+@app.route('/run-terraform', methods=['POST'])
+def run_terraform():
+    if 'case' not in request.json:
+        return jsonify({'error': 'Case not provided'}), 400
+
+    case = request.json['case']
+    terraform_script_path = ''
+
+    if case == 'Deploy-1':
+        terraform_script_path = 'Deploy-1'
+    elif case == 'Deploy-any-count':
+        terraform_script_path = 'Deploy-any-count'
+    elif case == 'Deploy-any-names':
+        terraform_script_path = 'Deploy-any-names'
+    else:
+        return jsonify({'error': 'Invalid case'}), 400
+
+    # Common required fields
+    common_required_fields = ['clone']
+    optional_fields = ['cores', 'sockets', 'memory', 'disk_size', 'network_model', 'nameserver']
+
+    tfvars = {}
+    errors = []
+
+    # Collect common required fields
+    for field in common_required_fields:
+        if field in request.json:
+            tfvars[field] = request.json[field]
+        else:
+            errors.append(f'{field} is required')
+
+    # Case-specific fields
+    if case == 'Deploy-1':
+        case_specific_required_fields = ['vm_name', 'vm_id', 'ip', 'gw', 'network_bridge', 'network_tag']
+    elif case == 'Deploy-any-count':
+        case_specific_required_fields = ['base_name', 'count', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
+    elif case == 'Deploy-any-names':
+        case_specific_required_fields = ['hostnames', 'count', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
+        
+        # Check if the number of hostnames matches the count
+        if 'hostnames' in request.json and 'count' in request.json:
+            hostnames = request.json['hostnames']
+            count = request.json['count']
+            if len(hostnames) != count:
+                errors.append('The number of hostnames does not match the count')
+
+    # Collect case-specific required fields
+    for field in case_specific_required_fields:
+        if field in request.json:
+            tfvars[field] = request.json[field]
+        else:
+            errors.append(f'{field} is required')
+
+    # Collect optional fields
+    for field in optional_fields:
+        if field in request.json:
+            tfvars[field] = request.json[field]
+
+    if errors:
+        return jsonify({'error': 'Missing required fields', 'details': errors}), 400
+
+    try:
+        print(tfvars)
+        # Write the terraform.tfvars file
+        write_tfvars_file(terraform_script_path, tfvars)
+        print("data written in terraform.tfvars")
+        # Run Terraform command
+        output, error = run_terraform_command(terraform_script_path)
+
+        return jsonify({'output': output.splitlines()[-2], 'error': error}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', debug=True, port=5000)
