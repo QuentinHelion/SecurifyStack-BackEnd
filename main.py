@@ -29,7 +29,16 @@ def before_request():
     Before request, check if token is give and if it is valid
     """
     if request.path not in EXCLUDED_ROUTES:
-        if request.args["token"] not in USERS_TOKENS:
+        if "token" in request.args:
+            if request.args["token"] not in USERS_TOKENS:
+                abort(
+                    code=401,
+                    description=jsonify({
+                        "status": "401",
+                        "message": "Unautorized"
+                    })
+                )
+        else:
             abort(
                 code=401,
                 description=jsonify({
