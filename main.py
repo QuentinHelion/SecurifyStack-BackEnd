@@ -11,6 +11,7 @@ from application.interfaces.controllers.ldaps_controller import LdapsController
 from infrastructure.data.args import Args
 from infrastructure.data.env_reader import EnvReader
 from infrastructure.data.token import generate_token
+from application.services.terraform_service import TerraformService
 
 args_checker = Args()
 
@@ -150,24 +151,14 @@ def stats_proxmox():
 
     return response, 200
 
-def write_tfvars_file(terraform_script_path, tfvars):
-    tfvars_content = '\n'.join([f'{key} = "{value}"' if isinstance(value, str) else f'{key} = {value}' for key, value in tfvars.items()])
-    tfvars_file_path = os.path.join('/root/TerraformCode', terraform_script_path, 'terraform.tfvars')
-    with open(tfvars_file_path, 'w') as tfvars_file:
-        tfvars_file.write(tfvars_content)
-
-def run_terraform_command(terraform_script_path):
-    command = f'cd /root/TerraformCode/{terraform_script_path} && terraform init && terraform plan && terraform apply -auto-approve'
-    process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output, error = process.communicate()
-    return output.decode('utf-8'), error.decode('utf-8')
 
 @app.route('/run-terraform', methods=['POST'])
 def run_terraform():
-    if 'case' not in request.json:
-        return jsonify({'error': 'Case not provided'}), 400
+    if 'case' not in request.json or 'vm_id' not in request.json:
+        return jsonify({'error': 'Case and VM ID must be provided'}), 400
 
     case = request.json['case']
+    vm_id = request.json['vm_id']
     terraform_script_path = ''
 
     if case == 'Deploy-1':
@@ -181,7 +172,7 @@ def run_terraform():
 
     # Common required fields
     common_required_fields = ['clone']
-    optional_fields = ['cores', 'sockets', 'memory', 'disk_size', 'network_model', 'nameserver']
+    optional_fields = ['cores', 'sockets', 'memory', 'disk_size', 'network_model', 'nameserver', 'network_config_type']
 
     tfvars = {}
     errors = []
@@ -219,6 +210,8 @@ def run_terraform():
     for field in optional_fields:
         if field in request.json:
             tfvars[field] = request.json[field]
+        elif field == 'network_config_type':
+            tfvars[field] = 'dhcp'
 
     if errors:
         return jsonify({'error': 'Missing required fields', 'details': errors}), 400
@@ -226,12 +219,15 @@ def run_terraform():
     try:
         print(tfvars)
         # Write the terraform.tfvars file
-        write_tfvars_file(terraform_script_path, tfvars)
-        print("data written in terraform.tfvars")
+        TerraformService.write_tfvars_file(terraform_script_path, tfvars)
+        print("Data written in terraform.tfvars")
         # Run Terraform command
-        output, error = run_terraform_command(terraform_script_path)
+        output, error = TerraformService.handle_terraform_command(terraform_script_path, vm_id)
 
-        return jsonify({'output': output.splitlines()[-2], 'error': error}), 200
+        if error:
+            return jsonify({'output': output, 'error': error}), 500
+
+        return jsonify({'output': output, 'error': None}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
