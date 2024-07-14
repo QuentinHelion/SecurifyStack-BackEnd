@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
 import os
 import subprocess
+import requests
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
 from infrastructure.data.args import Args
@@ -152,27 +153,65 @@ def stats_proxmox():
     return response, 200
 
 
+@app.route('/fetch-proxmox-data', methods=['GET'])
+def fetch_proxmox_data():
+    try:
+        proxmox_server = env_reader.get('PROXMOX_SERVER')
+        node = env_reader.get('NODE')
+        pve_api_token = env_reader.get('PVEAPITOKEN')
+        print(proxmox_server, node, pve_api_token)
+        headers = {
+            'Authorization': f'PVEAPIToken={pve_api_token}',
+        }
+
+        # Fetching bridges
+        print("will do requests")
+        bridges_response = requests.get(
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/network', headers=headers, verify=False)
+        print(bridges_response)
+        bridges_response.raise_for_status()  # Raise an HTTPError on bad status
+        bridges = [bridge['iface'] for bridge in bridges_response.json()[
+            'data'] if bridge['type'] == 'bridge']
+
+        # Fetching templates
+        templates_response_qemu = requests.get(
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/qemu', headers=headers, verify=False)
+        templates_response_qemu.raise_for_status()  # Raise an HTTPError on bad status
+        templates_response_lxc = requests.get(
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/lxc', headers=headers, verify=False)
+        templates_response_lxc.raise_for_status()  # Raise an HTTPError on bad status
+
+        templates = [
+            vm['name'] for vm in templates_response_qemu.json()['data'] if vm.get('template') == 1
+        ] + [
+            container['name'] for container in templates_response_lxc.json()['data'] if container.get('template') == 1
+        ]
+
+        return jsonify({
+            'bridges': bridges,
+            'templates': templates
+        })
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/run-terraform', methods=['POST'])
 def run_terraform():
-    if 'case' not in request.json or 'vm_id' not in request.json:
-        return jsonify({'error': 'Case and VM ID must be provided'}), 400
+    if 'case' not in request.json:
+        return jsonify({'error': 'Case must be provided'}), 400
 
     case = request.json['case']
-    vm_id = request.json['vm_id']
-    terraform_script_path = ''
-
-    if case == 'Deploy-1':
-        terraform_script_path = 'Deploy-1'
-    elif case == 'Deploy-any-count':
-        terraform_script_path = 'Deploy-any-count'
-    elif case == 'Deploy-any-names':
-        terraform_script_path = 'Deploy-any-names'
-    else:
-        return jsonify({'error': 'Invalid case'}), 400
+    terraform_script_path = case
+    try:
+        state_file_name = TerraformService.generate_state_file_name(
+            case, request.json)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
     # Common required fields
     common_required_fields = ['clone']
-    optional_fields = ['cores', 'sockets', 'memory', 'disk_size', 'network_model', 'nameserver', 'network_config_type']
+    optional_fields = ['cores', 'sockets', 'memory', 'disk_size',
+                       'network_model', 'nameserver', 'network_config_type']
 
     tfvars = {}
     errors = []
@@ -186,18 +225,14 @@ def run_terraform():
 
     # Case-specific fields
     if case == 'Deploy-1':
-        case_specific_required_fields = ['vm_name', 'vm_id', 'ip', 'gw', 'network_bridge', 'network_tag']
+        case_specific_required_fields = [
+            'vm_name', 'vm_id', 'ip', 'gw', 'network_bridge', 'network_tag']
     elif case == 'Deploy-any-count':
-        case_specific_required_fields = ['base_name', 'count', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
+        case_specific_required_fields = [
+            'base_name', 'vm_count', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
     elif case == 'Deploy-any-names':
-        case_specific_required_fields = ['hostnames', 'count', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
-        
-        # Check if the number of hostnames matches the count
-        if 'hostnames' in request.json and 'count' in request.json:
-            hostnames = request.json['hostnames']
-            count = request.json['count']
-            if len(hostnames) != count:
-                errors.append('The number of hostnames does not match the count')
+        case_specific_required_fields = [
+            'hostnames', 'start_vmid', 'start_ip', 'gw', 'network_bridge', 'network_tag']
 
     # Collect case-specific required fields
     for field in case_specific_required_fields:
@@ -222,7 +257,8 @@ def run_terraform():
         TerraformService.write_tfvars_file(terraform_script_path, tfvars)
         print("Data written in terraform.tfvars")
         # Run Terraform command
-        output, error = TerraformService.handle_terraform_command(terraform_script_path, vm_id)
+        output, error = TerraformService.handle_terraform_command(
+            terraform_script_path, state_file_name)
 
         if error:
             return jsonify({'output': output, 'error': error}), 500
@@ -230,6 +266,7 @@ def run_terraform():
         return jsonify({'output': output, 'error': None}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=True, port=5000)
