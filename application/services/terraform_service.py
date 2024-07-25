@@ -19,7 +19,7 @@ class TerraformService:
 
         tfvars_content = '\n'.join(tfvars_content)
         tfvars_file_path = os.path.join(
-            '/root/TerraformCode', terraform_script_path, 'terraform.tfvars')
+            '/root/SecurifyStack/TerraformCode', terraform_script_path, 'terraform.tfvars')
         with open(tfvars_file_path, 'w') as tfvars_file:
             tfvars_file.write(tfvars_content)
 
@@ -43,8 +43,7 @@ class TerraformService:
     def run_terraform_command(terraform_script_path, state_file_name):
         state_file = f"States/{state_file_name}"
         try:
-            command = f'cd /root/TerraformCode/{
-                terraform_script_path} && terraform init && terraform plan && terraform apply -state={state_file} -auto-approve'
+            command = f'cd /root/SecurifyStack/TerraformCode/{terraform_script_path} && terraform init && terraform plan && terraform apply -state={state_file} -auto-approve'
             process = subprocess.Popen(
                 command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             output, error = process.communicate()
@@ -60,8 +59,7 @@ class TerraformService:
     @staticmethod
     def unlock_terraform_state(terraform_script_path, lock_id):
         try:
-            command = f'cd /root/TerraformCode/{
-                terraform_script_path} && terraform force-unlock -force {lock_id}'
+            command = f'cd /root/SecurifyStack/TerraformCode/{terraform_script_path} && terraform force-unlock -force {lock_id}'
             process = subprocess.Popen(
                 command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             output, error = process.communicate()
