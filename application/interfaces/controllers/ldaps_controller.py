@@ -39,12 +39,12 @@ class LdapsController:
 
         return cn_str + dc_str
 
-    def connect(self, cn, dc, password):
+    def connect(self, bind_dn, password):
         """
-        Connects to the LDAP server
+        Connects to the LDAP server using a full DN
         """
-        print(self.set_request_user(cn, dc))
+        print(f"Attempting LDAP bind with DN: {bind_dn}")
         return self.presenter.connect(
-            user=self.set_request_user(cn, dc),
+            user=bind_dn,
             password=password
         )

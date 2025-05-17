@@ -17,7 +17,7 @@ from application.services.terraform_service import TerraformService
 args_checker = Args()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 env_reader = EnvReader()
 env_reader.load()
@@ -56,16 +56,29 @@ def login():
     """
     :return: auth token
     """
-    ldaps_controller = LdapsController(
-        server_address=env_reader.get("LDAPS_SERVER"),
-        path_to_cert_file="infrastructure/persistence/certificats/ssrootca.cer",
-        port=env_reader.get("LDAPS_SERVER_PORT")
+    # Fetch all LDAP config from env
+    ldap_server = env_reader.get("LDAPS_SERVER")
+    ldap_port = int(env_reader.get("LDAPS_SERVER_PORT"))
+    ldap_cert = env_reader.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
+    ldap_base_dn = env_reader.get("LDAPS_BASE_DN")  # e.g. 'dc=test,dc=local'
+    ldap_user_ou = env_reader.get("LDAPS_USER_OU", "")  # e.g. 'Users' or ''
 
+    # Build the correct DN for binding
+    user = request.args["cn"]
+    dn = f"uid={user}"
+    if ldap_user_ou:
+        dn += f",ou={ldap_user_ou}"
+    if ldap_base_dn:
+        dn += f",{ldap_base_dn}"
+
+    ldaps_controller = LdapsController(
+        server_address=ldap_server,
+        path_to_cert_file=ldap_cert,
+        port=ldap_port
     )
 
     result = ldaps_controller.connect(
-        cn=[request.args["cn"], "Users"],
-        dc=[request.args["dc"], "corp"],
+        bind_dn=dn,
         password=request.args["password"]
     )
 
@@ -77,9 +90,7 @@ def login():
         }), 400
 
     token = generate_token(16)
-
     USERS_TOKENS.append(token)
-
     return jsonify({
         "status": "200",
         "message": token
@@ -176,7 +187,7 @@ def fetch_proxmox_data():
         # Fetching bridges
         print("will do requests")
         bridges_response = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/network', headers=headers, verify=False)
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/network', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
         print(bridges_response)
         bridges_response.raise_for_status()  # Raise an HTTPError on bad status
         bridges = [bridge['iface'] for bridge in bridges_response.json()[
@@ -184,10 +195,10 @@ def fetch_proxmox_data():
 
         # Fetching templates
         templates_response_qemu = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/qemu', headers=headers, verify=False)
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/qemu', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
         templates_response_qemu.raise_for_status()  # Raise an HTTPError on bad status
         templates_response_lxc = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/lxc', headers=headers, verify=False)
+            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/lxc', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
         templates_response_lxc.raise_for_status()  # Raise an HTTPError on bad status
 
         templates = [
@@ -278,4 +289,6 @@ def run_terraform():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True, port=5000)
+    host = env_reader.get('BACKEND_HOST', '0.0.0.0')
+    port = int(env_reader.get('BACKEND_PORT', 5000))
+    app.run(host=host, debug=True, port=port)
