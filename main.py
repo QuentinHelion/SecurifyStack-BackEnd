@@ -9,8 +9,9 @@ import subprocess
 import requests
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
+from application.interfaces.presenters.ldaps_presenter import LdapsPresenter
 from infrastructure.data.args import Args
-from infrastructure.data.env_reader import EnvReader
+from infrastructure.data.config_manager import ConfigManager
 from infrastructure.data.token import generate_token
 from application.services.terraform_service import TerraformService
 
@@ -19,11 +20,10 @@ args_checker = Args()
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-env_reader = EnvReader()
-env_reader.load()
+config_manager = ConfigManager()
 
 USERS_TOKENS = []
-EXCLUDED_ROUTES = ["/login"]
+EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config"]
 
 
 @app.before_request
@@ -56,12 +56,12 @@ def login():
     """
     :return: auth token
     """
-    # Fetch all LDAP config from env
-    ldap_server = env_reader.get("LDAPS_SERVER")
-    ldap_port = int(env_reader.get("LDAPS_SERVER_PORT"))
-    ldap_cert = env_reader.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
-    ldap_base_dn = env_reader.get("LDAPS_BASE_DN")  # e.g. 'dc=test,dc=local'
-    ldap_user_ou = env_reader.get("LDAPS_USER_OU", "")  # e.g. 'Users' or ''
+    # Fetch all LDAP config from config manager
+    ldap_server = config_manager.get("LDAPS_SERVER")
+    ldap_port = int(config_manager.get("LDAPS_SERVER_PORT"))
+    ldap_cert = config_manager.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
+    ldap_base_dn = config_manager.get("LDAPS_BASE_DN")  # e.g. 'dc=test,dc=local'
+    ldap_user_ou = config_manager.get("LDAPS_USER_OU", "")  # e.g. 'Users' or ''
 
     # Build the correct DN for binding
     user = request.args["cn"]
@@ -161,6 +161,94 @@ def checklist_update():
     return response, 200
 
 
+def test_proxmox_connection(server, node, token):
+    """
+    Tests the connection to the Proxmox server and a specific node.
+    """
+    if not server or not node or not token:
+        return False, "Proxmox server, node, and token are required."
+    try:
+        headers = {'Authorization': f'PVEAPIToken={token}'}
+        response = requests.get(f'https://{server}:8006/api2/json/nodes/{node}/status', headers=headers, verify=False, timeout=5)
+        response.raise_for_status()
+        return True, "Proxmox connection successful."
+    except requests.exceptions.RequestException as e:
+        return False, f"Proxmox connection failed: {str(e)}"
+
+
+def test_ldaps_connection(server, port, base_dn, cert_info=None):
+    """
+    Tests the connection to the LDAPS server with an anonymous bind.
+    """
+    if not server or not port or not base_dn or not cert_info:
+        return False, "LDAPS server, port, base DN, and certificate are required."
+
+    cert_path = None
+    is_temp_cert = False
+    if cert_info:
+        # Check if cert_info is a valid path on the server
+        if os.path.exists(cert_info):
+            cert_path = cert_info
+        else:
+            # If not a path, assume it's content and write to a temp file
+            try:
+                with open("temp_cert.cer", "w") as cert_file:
+                    cert_file.write(cert_info)
+                cert_path = "temp_cert.cer"
+                is_temp_cert = True
+            except IOError as e:
+                return False, f"Failed to write temporary certificate file: {str(e)}"
+
+    try:
+        presenter = LdapsPresenter(server_address=server, port=int(port), path_to_cert_file=cert_path)
+        presenter.set_server()
+        is_ok, message = presenter.test_connection_and_search(base_dn)
+        return is_ok, message
+    except Exception as e:
+        return False, f"LDAPS connection failed: {str(e)}"
+    finally:
+        # Clean up the temporary certificate file only if we created it
+        if is_temp_cert and cert_path and os.path.exists(cert_path):
+            os.remove(cert_path)
+
+
+@app.route('/test-proxmox', methods=['POST'])
+def test_proxmox():
+    """
+    Tests the connection to a Proxmox server.
+    """
+    data = request.json
+    proxmox_server = data.get('proxmoxServer')
+    proxmox_node = data.get('proxmoxNode')
+    proxmox_token = data.get('proxmoxToken')
+
+    is_ok, message = test_proxmox_connection(proxmox_server, proxmox_node, proxmox_token)
+
+    if is_ok:
+        return jsonify({"status": "success", "message": message}), 200
+    else:
+        return jsonify({"status": "error", "message": message}), 400
+
+
+@app.route('/test-ldaps', methods=['POST'])
+def test_ldaps():
+    """
+    Tests the connection to an LDAPS server.
+    """
+    data = request.json
+    ldaps_server = data.get('ldapsServer')
+    ldaps_port = data.get('ldapsPort')
+    ldaps_base_dn = data.get('ldapsBaseDN')
+    ldaps_cert = data.get('ldapsCert') # This can be the cert data or a path
+
+    is_ok, message = test_ldaps_connection(ldaps_server, ldaps_port, ldaps_base_dn, ldaps_cert)
+
+    if is_ok:
+        return jsonify({"status": "success", "message": message}), 200
+    else:
+        return jsonify({"status": "error", "message": message}), 400
+
+
 @app.route('/stats/proxmox', methods=['GET'])
 def stats_proxmox():
     """
@@ -176,9 +264,9 @@ def stats_proxmox():
 @app.route('/fetch-proxmox-data', methods=['GET'])
 def fetch_proxmox_data():
     try:
-        proxmox_server = env_reader.get('PROXMOX_SERVER')
-        node = env_reader.get('NODE')
-        pve_api_token = env_reader.get('PVEAPITOKEN')
+        proxmox_server = config_manager.get('PROXMOX_SERVER')
+        node = config_manager.get('NODE')
+        pve_api_token = config_manager.get('PVEAPITOKEN')
         print(proxmox_server, node, pve_api_token)
         headers = {
             'Authorization': f'PVEAPIToken={pve_api_token}',
@@ -213,6 +301,34 @@ def fetch_proxmox_data():
         })
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/save-config', methods=['POST'])
+def save_config():
+    """
+    Saves the configuration from the control panel.
+    """
+    data = request.json
+    secrets = ['PVEAPITOKEN', 'LDAPS_CERT', 'PROXMOX_SERVER', 'LDAPS_SERVER', 'LDAPS_BASE_DN', 'NODE']
+    
+    # Map frontend keys to backend (.env) keys
+    key_map = {
+        "proxmoxServer": "PROXMOX_SERVER",
+        "proxmoxNode": "NODE",
+        "proxmoxToken": "PVEAPITOKEN",
+        "ldapsServer": "LDAPS_SERVER",
+        "ldapsPort": "LDAPS_SERVER_PORT",
+        "ldapsCert": "LDAPS_CERT",
+        "ldapsBaseDN": "LDAPS_BASE_DN",
+        "ldapsUserOU": "LDAPS_USER_OU"
+    }
+
+    config_to_save = {key_map[k]: v for k, v in data.items() if k in key_map}
+
+    if config_manager.save_config(config_to_save, secrets):
+        return jsonify({"status": "success", "message": "Configuration saved successfully."}), 200
+    else:
+        return jsonify({"status": "error", "message": "Failed to save configuration."}), 500
 
 
 @app.route('/run-terraform', methods=['POST'])
@@ -289,6 +405,6 @@ def run_terraform():
 
 
 if __name__ == '__main__':
-    host = env_reader.get('BACKEND_HOST', '0.0.0.0')
-    port = int(env_reader.get('BACKEND_PORT', 5000))
+    host = config_manager.get('BACKEND_HOST', '0.0.0.0')
+    port = int(config_manager.get('BACKEND_PORT', 5000))
     app.run(host=host, debug=True, port=port)
