@@ -3,3 +3,4 @@ test.py
 .env
 venv
 infrastructure/persistence/certificats/
+infrastructure/persistence/config.json

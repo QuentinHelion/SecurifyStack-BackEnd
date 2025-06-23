@@ -35,24 +35,42 @@ class LdapsPresenter:
             get_info=ALL
         )
 
-    def connect(self, user, password):
+    def connect(self, user, password, conn=None):
         """
         Connects to the LDAP server
         :return: Bool depend on if user exists or not
         """
-
-        result = False
         try:
-            conn = Connection(self.server, user=user, password=password, auto_bind=True)
+            if conn is None:
+                conn = Connection(self.server, user=user, password=password, auto_bind=True)
+            else:
+                conn.user = user
+                conn.password = password
+
             if conn.bind():
-                result = True
-            conn.unbind()
+                return True
+        except (LDAPBindError, LDAPSocketOpenError, LDAPException) as e:
+            print(f"LDAP error during bind: {e}")
 
-        except LDAPBindError as e:
-            print(f"LDAP bind error: {e}")
-        except LDAPSocketOpenError as e:
-            print(f"LDAP socket open error: {e}")
-        except LDAPException as e:
-            print(f"LDAP exception: {e}")
+        return False
 
-        return result
+    def test_connection_and_search(self, search_base):
+        """
+        Performs an anonymous bind and then a search to validate Base DN.
+        """
+        try:
+            # Establish connection with anonymous bind
+            conn = Connection(self.server, auto_bind=True)
+            if not conn.bound:
+                return False, "Anonymous bind failed."
+
+            # Perform a base-level search to validate the search_base
+            if conn.search(search_base, '(objectClass=*)', attributes=['objectClass'], size_limit=1):
+                conn.unbind()
+                return True, "LDAPS connection and Base DN validation successful."
+            else:
+                conn.unbind()
+                return False, f"Base DN '{search_base}' not found or not accessible."
+
+        except (LDAPBindError, LDAPSocketOpenError, LDAPException) as e:
+            return False, f"LDAP error: {e}"
