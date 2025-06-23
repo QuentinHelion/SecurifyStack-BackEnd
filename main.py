@@ -6,6 +6,7 @@ import sys
 import os
 from cryptography.fernet import Fernet
 from dotenv import set_key
+import logging
 
 # --- Argument Parsing must happen BEFORE Flask app initialization ---
 if '--generate-key' in sys.argv:
@@ -48,24 +49,30 @@ EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config", "/g
 @app.before_request
 def before_request():
     """
-    Before request, check if token is give and if it is valid
+    Before request, check if token is given and if it is valid
     """
+    if request.method == 'OPTIONS':
+        return
+
     if request.path not in EXCLUDED_ROUTES:
-        if "token" in request.args:
-            if request.args["token"] not in USERS_TOKENS:
-                abort(
-                    code=401,
-                    description=jsonify({
-                        "status": "401",
-                        "message": "Unautorized"
-                    })
-                )
-        else:
+        token = None
+        
+        # 1. First, try to get the token from the Authorization header (best practice)
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        
+        # 2. If not in header, fall back to checking URL parameters (for legacy calls)
+        if not token:
+            token = request.args.get('token')
+        
+        # 3. Validate the token
+        if not token or token not in USERS_TOKENS:
             abort(
                 code=401,
                 description=jsonify({
                     "status": "401",
-                    "message": "Unautorized"
+                    "message": "Unauthorized: Token is missing or invalid"
                 })
             )
 
@@ -294,43 +301,15 @@ def stats_proxmox():
 @app.route('/fetch-proxmox-data', methods=['GET'])
 def fetch_proxmox_data():
     try:
-        proxmox_server = config_manager.get('PROXMOX_SERVER')
-        node = config_manager.get('NODE')
-        pve_api_token = config_manager.get('PVEAPITOKEN')
-        print(proxmox_server, node, pve_api_token)
-        headers = {
-            'Authorization': f'PVEAPIToken={pve_api_token}',
-        }
-
-        # Fetching bridges
-        print("will do requests")
-        bridges_response = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/network', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
-        print(bridges_response)
-        bridges_response.raise_for_status()  # Raise an HTTPError on bad status
-        bridges = [bridge['iface'] for bridge in bridges_response.json()[
-            'data'] if bridge['type'] == 'bridge']
-
-        # Fetching templates
-        templates_response_qemu = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/qemu', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
-        templates_response_qemu.raise_for_status()  # Raise an HTTPError on bad status
-        templates_response_lxc = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/lxc', headers=headers, verify="infrastructure/persistence/certificats/ssrootca.cer")
-        templates_response_lxc.raise_for_status()  # Raise an HTTPError on bad status
-
-        templates = [
-            vm['name'] for vm in templates_response_qemu.json()['data'] if vm.get('template') == 1
-        ] + [
-            container['name'] for container in templates_response_lxc.json()['data'] if container.get('template') == 1
-        ]
-
-        return jsonify({
-            'bridges': bridges,
-            'templates': templates
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': str(e)}), 500
+        # Use the service layer, which contains the correct Proxmox API logic
+        terraform_service = TerraformService(config_manager)
+        templates = terraform_service.get_templates()
+        bridges = terraform_service.get_bridges()
+        return jsonify({"templates": templates, "bridges": bridges})
+    except Exception as e:
+        # Log the actual error for easier debugging in the future
+        logging.error(f"Error fetching Proxmox data: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while fetching Proxmox data."}), 500
 
 
 @app.route('/get-config', methods=['GET'])
