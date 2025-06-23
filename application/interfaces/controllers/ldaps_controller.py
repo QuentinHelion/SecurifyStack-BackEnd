@@ -43,7 +43,6 @@ class LdapsController:
         """
         Connects to the LDAP server using a full DN
         """
-        print(f"Attempting LDAP bind with DN: {bind_dn}")
         return self.presenter.connect(
             user=bind_dn,
             password=password

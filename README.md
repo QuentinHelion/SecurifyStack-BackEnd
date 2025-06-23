@@ -1,5 +1,24 @@
 # SecurifyStack-BackEnd
 
+## First-Time Setup: Generating the Master Key
+
+This application uses an encrypted file (`infrastructure/persistence/config.json`) to store configuration settings managed via the UI. To encrypt this file, a `MASTER_KEY` is required. This key **must** be generated once during the initial setup.
+
+1.  **Navigate to the project directory:**
+    ```sh
+    cd /path/to/SecurifyStack-BackEnd
+    ```
+
+2.  **Run the key generation command:**
+    ```sh
+    python3 main.py --generate-key
+    ```
+    This command will create a `.env` file in your project root (if it doesn't exist) and add a secure `MASTER_KEY` to it. It will then exit.
+
+**IMPORTANT:** The `.env` file contains the master secret. Treat it with care, do not commit it to version control, and ensure it is present in the application's environment for it to run.
+
+---
+
 ## Setup Instructions
 
 1. **Install dependencies**

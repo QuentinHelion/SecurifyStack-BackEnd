@@ -2,10 +2,29 @@
 Main app file, all api route are declared there
 """
 
+import sys
+import os
+from cryptography.fernet import Fernet
+from dotenv import set_key
+
+# --- Argument Parsing must happen BEFORE Flask app initialization ---
+if '--generate-key' in sys.argv:
+    try:
+        env_file = '.env'
+        if not os.path.exists(env_file):
+            open(env_file, 'a').close()
+        
+        new_key = Fernet.generate_key()
+        set_key(env_file, 'MASTER_KEY', new_key.decode())
+        print(f"Successfully generated and saved a new MASTER_KEY to the {env_file} file.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"An error occurred while generating the key: {e}")
+        sys.exit(1)
+
+
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-import os
-import subprocess
 import requests
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
@@ -23,7 +42,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 config_manager = ConfigManager()
 
 USERS_TOKENS = []
-EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config"]
+EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config", "/get-config"]
 
 
 @app.before_request
@@ -56,45 +75,59 @@ def login():
     """
     :return: auth token
     """
-    # Fetch all LDAP config from config manager
     ldap_server = config_manager.get("LDAPS_SERVER")
     ldap_port = int(config_manager.get("LDAPS_SERVER_PORT"))
-    ldap_cert = config_manager.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
-    ldap_base_dn = config_manager.get("LDAPS_BASE_DN")  # e.g. 'dc=test,dc=local'
-    ldap_user_ou = config_manager.get("LDAPS_USER_OU", "")  # e.g. 'Users' or ''
+    ldap_cert_info = config_manager.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
+    ldap_base_dn = config_manager.get("LDAPS_BASE_DN")
+    ldap_user_ou = config_manager.get("LDAPS_USER_OU", "")
 
-    # Build the correct DN for binding
-    user = request.args["cn"]
-    dn = f"uid={user}"
-    if ldap_user_ou:
-        dn += f",ou={ldap_user_ou}"
-    if ldap_base_dn:
-        dn += f",{ldap_base_dn}"
+    cert_path = None
+    is_temp_cert = False
+    try:
+        if ldap_cert_info and os.path.exists(ldap_cert_info):
+            cert_path = ldap_cert_info
+        elif ldap_cert_info:
+            is_temp_cert = True
+            cert_path = "login_temp_cert.cer"
+            with open(cert_path, "w") as cert_file:
+                cert_file.write(ldap_cert_info)
 
-    ldaps_controller = LdapsController(
-        server_address=ldap_server,
-        path_to_cert_file=ldap_cert,
-        port=ldap_port
-    )
+        # Build the correct DN for binding
+        user = request.args["cn"]
+        dn = f"uid={user}"
+        if ldap_user_ou:
+            dn += f",ou={ldap_user_ou}"
+        if ldap_base_dn:
+            dn += f",{ldap_base_dn}"
 
-    result = ldaps_controller.connect(
-        bind_dn=dn,
-        password=request.args["password"]
-    )
+        ldaps_controller = LdapsController(
+            server_address=ldap_server,
+            path_to_cert_file=cert_path,
+            port=ldap_port
+        )
 
-    if not result:
-        print("User | Error | User not found")
+        result = ldaps_controller.connect(
+            bind_dn=dn,
+            password=request.args["password"]
+        )
+
+        if not result:
+            print("User | Error | User not found")
+            return jsonify({
+                "status": "400",
+                "message": "User not found"
+            }), 400
+
+        token = generate_token(16)
+        USERS_TOKENS.append(token)
         return jsonify({
-            "status": "400",
-            "message": "User not found"
-        }), 400
+            "status": "200",
+            "message": token
+        }), 200
 
-    token = generate_token(16)
-    USERS_TOKENS.append(token)
-    return jsonify({
-        "status": "200",
-        "message": token
-    }), 200
+    finally:
+        if is_temp_cert and cert_path and os.path.exists(cert_path):
+            os.remove(cert_path)
 
 
 @app.route('/disconnect', methods=['GET'])
@@ -185,19 +218,16 @@ def test_ldaps_connection(server, port, base_dn, cert_info=None):
 
     cert_path = None
     is_temp_cert = False
-    if cert_info:
-        # Check if cert_info is a valid path on the server
-        if os.path.exists(cert_info):
-            cert_path = cert_info
-        else:
-            # If not a path, assume it's content and write to a temp file
-            try:
-                with open("temp_cert.cer", "w") as cert_file:
-                    cert_file.write(cert_info)
-                cert_path = "temp_cert.cer"
-                is_temp_cert = True
-            except IOError as e:
-                return False, f"Failed to write temporary certificate file: {str(e)}"
+    if cert_info and os.path.exists(cert_info):
+        cert_path = cert_info
+    elif cert_info:
+        is_temp_cert = True
+        cert_path = "temp_cert.cer"
+        try:
+            with open(cert_path, "w") as cert_file:
+                cert_file.write(cert_info)
+        except IOError as e:
+            return False, f"Failed to write temporary certificate: {e}"
 
     try:
         presenter = LdapsPresenter(server_address=server, port=int(port), path_to_cert_file=cert_path)
@@ -207,7 +237,7 @@ def test_ldaps_connection(server, port, base_dn, cert_info=None):
     except Exception as e:
         return False, f"LDAPS connection failed: {str(e)}"
     finally:
-        # Clean up the temporary certificate file only if we created it
+        # Clean up the temporary certificate file if it was created
         if is_temp_cert and cert_path and os.path.exists(cert_path):
             os.remove(cert_path)
 
@@ -303,29 +333,38 @@ def fetch_proxmox_data():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/get-config', methods=['GET'])
+def get_config():
+    """Returns the current configuration, decrypting secrets."""
+    config_keys = [
+        "PROXMOX_SERVER", "NODE", "PVEAPITOKEN",
+        "LDAPS_SERVER", "LDAPS_PORT", "LDAPS_CERT",
+        "LDAPS_BASE_DN", "LDAPS_USER_OU"
+    ]
+    
+    current_config = {key: config_manager.get(key) for key in config_keys}
+    return jsonify(current_config)
+
+
 @app.route('/save-config', methods=['POST'])
 def save_config():
     """
     Saves the configuration from the control panel.
     """
     data = request.json
-    secrets = ['PVEAPITOKEN', 'LDAPS_CERT', 'PROXMOX_SERVER', 'LDAPS_SERVER', 'LDAPS_BASE_DN', 'NODE']
     
-    # Map frontend keys to backend (.env) keys
-    key_map = {
-        "proxmoxServer": "PROXMOX_SERVER",
-        "proxmoxNode": "NODE",
-        "proxmoxToken": "PVEAPITOKEN",
-        "ldapsServer": "LDAPS_SERVER",
-        "ldapsPort": "LDAPS_SERVER_PORT",
-        "ldapsCert": "LDAPS_CERT",
-        "ldapsBaseDN": "LDAPS_BASE_DN",
-        "ldapsUserOU": "LDAPS_USER_OU"
+    config_to_save = {
+        'PROXMOX_SERVER': data.get('proxmoxServer'),
+        'NODE': data.get('proxmoxNode'),
+        'PVEAPITOKEN': data.get('proxmoxToken'),
+        'LDAPS_SERVER': data.get('ldapsServer'),
+        'LDAPS_PORT': data.get('ldapsPort'),
+        'LDAPS_CERT': data.get('ldapsCert'),
+        'LDAPS_BASE_DN': data.get('ldapsBaseDN'),
+        'LDAPS_USER_OU': data.get('ldapsUserOU')
     }
 
-    config_to_save = {key_map[k]: v for k, v in data.items() if k in key_map}
-
-    if config_manager.save_config(config_to_save, secrets):
+    if config_manager.save_config(config_to_save):
         return jsonify({"status": "success", "message": "Configuration saved successfully."}), 200
     else:
         return jsonify({"status": "error", "message": "Failed to save configuration."}), 500
