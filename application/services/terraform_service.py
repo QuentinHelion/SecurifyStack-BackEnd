@@ -1,9 +1,43 @@
 import os
 import subprocess
 import re
+from proxmoxer import ProxmoxAPI
 
 
 class TerraformService:
+    def __init__(self, config_manager):
+        proxmox_server = config_manager.get('PROXMOX_SERVER')
+        pve_api_token = config_manager.get('PVEAPITOKEN')
+        
+        # Correctly parse the Proxmox API Token string
+        user_part, token_part = pve_api_token.split('!')
+        token_name, token_value = token_part.split('=')
+
+        self.proxmox = ProxmoxAPI(
+            proxmox_server,
+            user=user_part,
+            token_name=token_name,
+            token_value=token_value,
+            verify_ssl=False  # Consider using a proper certificate in production
+        )
+        self.node = config_manager.get('NODE')
+
+    def get_templates(self):
+        """Fetches a list of all templates (QEMU VMs and LXC containers)."""
+        all_vms = self.proxmox.nodes(self.node).qemu.get()
+        all_lxc = self.proxmox.nodes(self.node).lxc.get()
+
+        templates_qemu = [vm['name'] for vm in all_vms if vm.get('template')]
+        templates_lxc = [ct['name'] for ct in all_lxc if ct.get('template')]
+        
+        return templates_qemu + templates_lxc
+
+    def get_bridges(self):
+        """Fetches a list of all network bridges."""
+        network_devices = self.proxmox.nodes(self.node).network.get()
+        bridges = [dev['iface'] for dev in network_devices if dev['type'] == 'bridge']
+        return bridges
+
     @staticmethod
     def write_tfvars_file(terraform_script_path, tfvars):
         tfvars_content = []
