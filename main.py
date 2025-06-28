@@ -422,6 +422,82 @@ def run_terraform():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/validate-config', methods=['POST'])
+def validate_config():
+    data = request.json
+    errors = []
+    vmid_set = set()
+    ip_set = set()
+    roles_windows_server = ['ADDS', 'DNS', 'DHCP', 'IIS']
+    roles_linux_server = ['Web Server', 'Database', 'File Server']
+    os_versions_windows_server = ['2016', '2019', '2022']
+    os_versions_linux_server = ['debian12.4', 'debian12.5', 'ubuntu24.04-desktop', 'ubuntu24.04-cloud']
+    machines = data.get('machines', [])
+    if not machines:
+        errors.append('No machines defined.')
+    for idx, m in enumerate(machines):
+        base_type = m.get('baseType') or (m.get('id', '').split('-')[0])
+        name = m.get('name') or m.get('id')
+        adv = m.get('advanced', {})
+        # VMID
+        vmid = adv.get('vmid') or (100 + idx)
+        if not isinstance(vmid, int) or vmid <= 0 or vmid >= 10000:
+            errors.append(f'{name}: Invalid or missing VMID.')
+        if vmid in vmid_set:
+            errors.append(f'{name}: Duplicate VMID ({vmid}).')
+        vmid_set.add(vmid)
+        # Name
+        if not name or not isinstance(name, str) or not name.strip():
+            errors.append(f'{name}: Name is required.')
+        # IP (only require for static mode)
+        if base_type != 'vmPack':
+            ip_mode = adv.get('ip_mode', 'dhcp')
+            if ip_mode == 'static':
+                ip = adv.get('ip_address')
+                if not ip or not isinstance(ip, str) or not is_valid_ip(ip):
+                    errors.append(f'{name}: Invalid or missing IP address.')
+                if ip in ip_set:
+                    errors.append(f'{name}: Duplicate IP ({ip}).')
+                ip_set.add(ip)
+        # OS Version
+        if base_type == 'windowsServer' and adv.get('os_version') not in os_versions_windows_server:
+            errors.append(f'{name}: Invalid or missing Windows Server OS version.')
+        if base_type == 'linuxServer' and adv.get('os_version') not in os_versions_linux_server:
+            errors.append(f'{name}: Invalid or missing Linux Server OS version.')
+        # Roles
+        roles = m.get('roles', [])
+        if base_type == 'windowsServer' and not all(r in roles_windows_server for r in roles):
+            errors.append(f'{name}: Invalid roles selected.')
+        if base_type == 'linuxServer' and not all(r in roles_linux_server for r in roles):
+            errors.append(f'{name}: Invalid roles selected.')
+        # VM Pack count
+        if base_type == 'vmPack':
+            count = m.get('group', {}).get('count')
+            if not isinstance(count, int) or count < 1 or count > 10:
+                errors.append(f'{name}: VM Pack count must be 1-10.')
+        # VLANs
+        vlans = m.get('vlans', [])
+        if vlans:
+            if not isinstance(vlans, list):
+                errors.append(f'{name}: VLANs must be a list.')
+            else:
+                seen_vlans = set()
+                for v in vlans:
+                    if not v or (not isinstance(v, (str, int))):
+                        errors.append(f'{name}: VLANs must be non-empty strings or numbers.')
+                    if v in seen_vlans:
+                        errors.append(f'{name}: Duplicate VLAN ({v}).')
+                    seen_vlans.add(v)
+    if errors:
+        return jsonify({'valid': False, 'errors': errors}), 200
+    return jsonify({'valid': True}), 200
+
+
+def is_valid_ip(ip):
+    import re
+    return re.match(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$', ip) is not None
+
+
 if __name__ == '__main__':
     host = config_manager.get('BACKEND_HOST', '0.0.0.0')
     port = int(config_manager.get('BACKEND_PORT', 5000))
