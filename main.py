@@ -431,7 +431,15 @@ def validate_config():
     roles_windows_server = ['ADDS', 'DNS', 'DHCP', 'IIS']
     roles_linux_server = ['Web Server', 'Database', 'File Server']
     os_versions_windows_server = ['2016', '2019', '2022']
-    os_versions_linux_server = ['debian12.4', 'debian12.5', 'ubuntu24.04-desktop', 'ubuntu24.04-cloud']
+    os_versions_linux_server = [
+        'debian-12.4.0-amd64-netinst.iso',
+        'debian-12.5.0-amd64-netinst.iso', 
+        'noble-server-cloudimg-amd64.img',
+        'ubuntu-24.04-desktop-amd64.iso',
+        'debian-12-standard_12.2-1_amd64.tar.zst',
+        'ubuntu-20.04-standard_20.04-1_amd64.tar.gz',
+        'ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
+    ]
     machines = data.get('machines', [])
     if not machines:
         errors.append('No machines defined.')
