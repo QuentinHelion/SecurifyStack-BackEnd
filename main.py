@@ -2,51 +2,77 @@
 Main app file, all api route are declared there
 """
 
+import sys
+import os
+from cryptography.fernet import Fernet
+from dotenv import set_key
+import logging
+
+# --- Argument Parsing must happen BEFORE Flask app initialization ---
+if '--generate-key' in sys.argv:
+    try:
+        env_file = '.env'
+        if not os.path.exists(env_file):
+            open(env_file, 'a').close()
+        
+        new_key = Fernet.generate_key()
+        set_key(env_file, 'MASTER_KEY', new_key.decode())
+        print(f"Successfully generated and saved a new MASTER_KEY to the {env_file} file.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"An error occurred while generating the key: {e}")
+        sys.exit(1)
+
+
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
-import os
-import subprocess
 import requests
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
+from application.interfaces.presenters.ldaps_presenter import LdapsPresenter
 from infrastructure.data.args import Args
-from infrastructure.data.env_reader import EnvReader
+from infrastructure.data.config_manager import ConfigManager
 from infrastructure.data.token import generate_token
 from application.services.terraform_service import TerraformService
 
 args_checker = Args()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-env_reader = EnvReader()
-env_reader.load()
+config_manager = ConfigManager()
 
 USERS_TOKENS = []
-EXCLUDED_ROUTES = ["/login"]
+EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config", "/get-config"]
 
 
 @app.before_request
 def before_request():
     """
-    Before request, check if token is give and if it is valid
+    Before request, check if token is given and if it is valid
     """
+    if request.method == 'OPTIONS':
+        return
+
     if request.path not in EXCLUDED_ROUTES:
-        if "token" in request.args:
-            if request.args["token"] not in USERS_TOKENS:
-                abort(
-                    code=401,
-                    description=jsonify({
-                        "status": "401",
-                        "message": "Unautorized"
-                    })
-                )
-        else:
+        token = None
+        
+        # 1. First, try to get the token from the Authorization header (best practice)
+        auth_header = request.headers.get('Authorization')
+        if auth_header and auth_header.startswith('Bearer '):
+            token = auth_header.split(' ')[1]
+        
+        # 2. If not in header, fall back to checking URL parameters (for legacy calls)
+        if not token:
+            token = request.args.get('token')
+        
+        # 3. Validate the token
+        if not token or token not in USERS_TOKENS:
             abort(
                 code=401,
                 description=jsonify({
                     "status": "401",
-                    "message": "Unautorized"
+                    "message": "Unauthorized: Token is missing or invalid"
                 })
             )
 
@@ -56,34 +82,59 @@ def login():
     """
     :return: auth token
     """
-    ldaps_controller = LdapsController(
-        server_address=env_reader.get("LDAPS_SERVER"),
-        path_to_cert_file="infrastructure/persistence/certificats/ssrootca.cer",
-        port=env_reader.get("LDAPS_SERVER_PORT")
+    ldap_server = config_manager.get("LDAPS_SERVER")
+    ldap_port = int(config_manager.get("LDAPS_SERVER_PORT"))
+    ldap_cert_info = config_manager.get("LDAPS_CERT", "infrastructure/persistence/certificats/ssrootca.cer")
+    ldap_base_dn = config_manager.get("LDAPS_BASE_DN")
+    ldap_user_ou = config_manager.get("LDAPS_USER_OU", "")
 
-    )
+    cert_path = None
+    is_temp_cert = False
+    try:
+        if ldap_cert_info and os.path.exists(ldap_cert_info):
+            cert_path = ldap_cert_info
+        elif ldap_cert_info:
+            is_temp_cert = True
+            cert_path = "login_temp_cert.cer"
+            with open(cert_path, "w") as cert_file:
+                cert_file.write(ldap_cert_info)
 
-    result = ldaps_controller.connect(
-        cn=[request.args["cn"], "Users"],
-        dc=[request.args["dc"], "corp"],
-        password=request.args["password"]
-    )
+        # Build the correct DN for binding
+        user = request.args["cn"]
+        dn = f"uid={user}"
+        if ldap_user_ou:
+            dn += f",ou={ldap_user_ou}"
+        if ldap_base_dn:
+            dn += f",{ldap_base_dn}"
 
-    if not result:
-        print("User | Error | User not found")
+        ldaps_controller = LdapsController(
+            server_address=ldap_server,
+            path_to_cert_file=cert_path,
+            port=ldap_port
+        )
+
+        result = ldaps_controller.connect(
+            bind_dn=dn,
+            password=request.args["password"]
+        )
+
+        if not result:
+            print("User | Error | User not found")
+            return jsonify({
+                "status": "400",
+                "message": "User not found"
+            }), 400
+
+        token = generate_token(16)
+        USERS_TOKENS.append(token)
         return jsonify({
-            "status": "400",
-            "message": "User not found"
-        }), 400
+            "status": "200",
+            "message": token
+        }), 200
 
-    token = generate_token(16)
-
-    USERS_TOKENS.append(token)
-
-    return jsonify({
-        "status": "200",
-        "message": token
-    }), 200
+    finally:
+        if is_temp_cert and cert_path and os.path.exists(cert_path):
+            os.remove(cert_path)
 
 
 @app.route('/disconnect', methods=['GET'])
@@ -150,6 +201,91 @@ def checklist_update():
     return response, 200
 
 
+def test_proxmox_connection(server, node, token):
+    """
+    Tests the connection to the Proxmox server and a specific node.
+    """
+    if not server or not node or not token:
+        return False, "Proxmox server, node, and token are required."
+    try:
+        headers = {'Authorization': f'PVEAPIToken={token}'}
+        response = requests.get(f'https://{server}:8006/api2/json/nodes/{node}/status', headers=headers, verify=False, timeout=5)
+        response.raise_for_status()
+        return True, "Proxmox connection successful."
+    except requests.exceptions.RequestException as e:
+        return False, f"Proxmox connection failed: {str(e)}"
+
+
+def test_ldaps_connection(server, port, base_dn, cert_info=None):
+    """
+    Tests the connection to the LDAPS server with an anonymous bind.
+    """
+    if not server or not port or not base_dn or not cert_info:
+        return False, "LDAPS server, port, base DN, and certificate are required."
+
+    cert_path = None
+    is_temp_cert = False
+    if cert_info and os.path.exists(cert_info):
+        cert_path = cert_info
+    elif cert_info:
+        is_temp_cert = True
+        cert_path = "temp_cert.cer"
+        try:
+            with open(cert_path, "w") as cert_file:
+                cert_file.write(cert_info)
+        except IOError as e:
+            return False, f"Failed to write temporary certificate: {e}"
+
+    try:
+        presenter = LdapsPresenter(server_address=server, port=int(port), path_to_cert_file=cert_path)
+        presenter.set_server()
+        is_ok, message = presenter.test_connection_and_search(base_dn)
+        return is_ok, message
+    except Exception as e:
+        return False, f"LDAPS connection failed: {str(e)}"
+    finally:
+        # Clean up the temporary certificate file if it was created
+        if is_temp_cert and cert_path and os.path.exists(cert_path):
+            os.remove(cert_path)
+
+
+@app.route('/test-proxmox', methods=['POST'])
+def test_proxmox():
+    """
+    Tests the connection to a Proxmox server.
+    """
+    data = request.json
+    proxmox_server = data.get('proxmoxServer')
+    proxmox_node = data.get('proxmoxNode')
+    proxmox_token = data.get('proxmoxToken')
+
+    is_ok, message = test_proxmox_connection(proxmox_server, proxmox_node, proxmox_token)
+
+    if is_ok:
+        return jsonify({"status": "success", "message": message}), 200
+    else:
+        return jsonify({"status": "error", "message": message}), 400
+
+
+@app.route('/test-ldaps', methods=['POST'])
+def test_ldaps():
+    """
+    Tests the connection to an LDAPS server.
+    """
+    data = request.json
+    ldaps_server = data.get('ldapsServer')
+    ldaps_port = data.get('ldapsPort')
+    ldaps_base_dn = data.get('ldapsBaseDN')
+    ldaps_cert = data.get('ldapsCert') # This can be the cert data or a path
+
+    is_ok, message = test_ldaps_connection(ldaps_server, ldaps_port, ldaps_base_dn, ldaps_cert)
+
+    if is_ok:
+        return jsonify({"status": "success", "message": message}), 200
+    else:
+        return jsonify({"status": "error", "message": message}), 400
+
+
 @app.route('/stats/proxmox', methods=['GET'])
 def stats_proxmox():
     """
@@ -165,43 +301,52 @@ def stats_proxmox():
 @app.route('/fetch-proxmox-data', methods=['GET'])
 def fetch_proxmox_data():
     try:
-        proxmox_server = env_reader.get('PROXMOX_SERVER')
-        node = env_reader.get('NODE')
-        pve_api_token = env_reader.get('PVEAPITOKEN')
-        print(proxmox_server, node, pve_api_token)
-        headers = {
-            'Authorization': f'PVEAPIToken={pve_api_token}',
-        }
+        # Use the service layer, which contains the correct Proxmox API logic
+        terraform_service = TerraformService(config_manager)
+        templates = terraform_service.get_templates()
+        bridges = terraform_service.get_bridges()
+        return jsonify({"templates": templates, "bridges": bridges})
+    except Exception as e:
+        # Log the actual error for easier debugging in the future
+        logging.error(f"Error fetching Proxmox data: {e}", exc_info=True)
+        return jsonify({"error": "An internal error occurred while fetching Proxmox data."}), 500
 
-        # Fetching bridges
-        print("will do requests")
-        bridges_response = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/network', headers=headers, verify=False)
-        print(bridges_response)
-        bridges_response.raise_for_status()  # Raise an HTTPError on bad status
-        bridges = [bridge['iface'] for bridge in bridges_response.json()[
-            'data'] if bridge['type'] == 'bridge']
 
-        # Fetching templates
-        templates_response_qemu = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/qemu', headers=headers, verify=False)
-        templates_response_qemu.raise_for_status()  # Raise an HTTPError on bad status
-        templates_response_lxc = requests.get(
-            f'https://{proxmox_server}:8006/api2/json/nodes/{node}/lxc', headers=headers, verify=False)
-        templates_response_lxc.raise_for_status()  # Raise an HTTPError on bad status
+@app.route('/get-config', methods=['GET'])
+def get_config():
+    """Returns the current configuration, decrypting secrets."""
+    config_keys = [
+        "PROXMOX_SERVER", "NODE", "PVEAPITOKEN",
+        "LDAPS_SERVER", "LDAPS_PORT", "LDAPS_CERT",
+        "LDAPS_BASE_DN", "LDAPS_USER_OU"
+    ]
+    
+    current_config = {key: config_manager.get(key) for key in config_keys}
+    return jsonify(current_config)
 
-        templates = [
-            vm['name'] for vm in templates_response_qemu.json()['data'] if vm.get('template') == 1
-        ] + [
-            container['name'] for container in templates_response_lxc.json()['data'] if container.get('template') == 1
-        ]
 
-        return jsonify({
-            'bridges': bridges,
-            'templates': templates
-        })
-    except requests.exceptions.RequestException as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/save-config', methods=['POST'])
+def save_config():
+    """
+    Saves the configuration from the control panel.
+    """
+    data = request.json
+    
+    config_to_save = {
+        'PROXMOX_SERVER': data.get('proxmoxServer'),
+        'NODE': data.get('proxmoxNode'),
+        'PVEAPITOKEN': data.get('proxmoxToken'),
+        'LDAPS_SERVER': data.get('ldapsServer'),
+        'LDAPS_PORT': data.get('ldapsPort'),
+        'LDAPS_CERT': data.get('ldapsCert'),
+        'LDAPS_BASE_DN': data.get('ldapsBaseDN'),
+        'LDAPS_USER_OU': data.get('ldapsUserOU')
+    }
+
+    if config_manager.save_config(config_to_save):
+        return jsonify({"status": "success", "message": "Configuration saved successfully."}), 200
+    else:
+        return jsonify({"status": "error", "message": "Failed to save configuration."}), 500
 
 
 @app.route('/run-terraform', methods=['POST'])
@@ -278,4 +423,6 @@ def run_terraform():
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True, port=5000)
+    host = config_manager.get('BACKEND_HOST', '0.0.0.0')
+    port = int(config_manager.get('BACKEND_PORT', 5000))
+    app.run(host=host, debug=True, port=port)
