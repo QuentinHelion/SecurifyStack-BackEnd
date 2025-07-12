@@ -34,6 +34,7 @@ from infrastructure.data.args import Args
 from infrastructure.data.config_manager import ConfigManager
 from infrastructure.data.token import generate_token
 from application.services.terraform_service import TerraformService
+from application.services.deployment_service import DeploymentService
 
 args_checker = Args()
 
@@ -41,6 +42,8 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 config_manager = ConfigManager()
+terraform_service = TerraformService(config_manager)
+deployment_service = DeploymentService(config_manager)
 
 USERS_TOKENS = []
 EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config", "/get-config"]
@@ -504,6 +507,69 @@ def validate_config():
 def is_valid_ip(ip):
     import re
     return re.match(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$', ip) is not None
+
+
+@app.route('/deploy-machines', methods=['POST'])
+def deploy_machines():
+    """Deploy machines from Conceptify using individual Terraform deployments"""
+    try:
+        data = request.json
+        machines = data.get('machines', [])
+        
+        if not machines:
+            return jsonify({'error': 'No machines provided for deployment'}), 400
+        
+        # Deploy all machines using the deployment service
+        results = deployment_service.deploy_machines(machines)
+        
+        # Check if any deployments failed
+        failed_deployments = [r for r in results if r['status'] == 'error']
+        successful_deployments = [r for r in results if r['status'] == 'success']
+        
+        response = {
+            'total_machines': len(machines),
+            'successful': len(successful_deployments),
+            'failed': len(failed_deployments),
+            'results': results
+        }
+        
+        if failed_deployments:
+            response['message'] = f"{len(successful_deployments)} machines deployed successfully, {len(failed_deployments)} failed"
+            return jsonify(response), 207  # Multi-status
+        else:
+            response['message'] = f"All {len(machines)} machines deployed successfully"
+            return jsonify(response), 200
+            
+    except Exception as e:
+        logging.error(f"Error in deploy_machines: {e}", exc_info=True)
+        return jsonify({'error': f'Deployment service error: {str(e)}'}), 500
+
+
+@app.route('/list-deployments', methods=['GET'])
+def list_deployments():
+    """List all current deployments"""
+    try:
+        deployments = deployment_service.list_deployments()
+        return jsonify({'deployments': deployments}), 200
+    except Exception as e:
+        logging.error(f"Error listing deployments: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to list deployments: {str(e)}'}), 500
+
+
+@app.route('/destroy-machine/<machine_id>', methods=['DELETE'])
+def destroy_machine(machine_id):
+    """Destroy a specific machine deployment"""
+    try:
+        result = deployment_service.destroy_machine(machine_id)
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logging.error(f"Error destroying machine {machine_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to destroy machine: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

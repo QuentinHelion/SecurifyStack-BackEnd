@@ -4,3 +4,4 @@ test.py
 venv
 infrastructure/persistence/certificats/
 infrastructure/persistence/config.json
+deployments/
