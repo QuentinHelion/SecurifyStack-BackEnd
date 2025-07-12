@@ -24,16 +24,21 @@ if '--generate-key' in sys.argv:
         sys.exit(1)
 
 
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, send_file
 from flask_cors import CORS
 import requests
+import tempfile
+import shutil
 from application.interfaces.controllers.crtl_json import JsonCrtl
 from application.interfaces.controllers.ldaps_controller import LdapsController
 from application.interfaces.presenters.ldaps_presenter import LdapsPresenter
 from infrastructure.data.args import Args
 from infrastructure.data.config_manager import ConfigManager
 from infrastructure.data.token import generate_token
+from infrastructure.data.sftp_utils import connect_sftp, is_directory
+from infrastructure.data.terraform_utils import execute_terraform
 from application.services.terraform_service import TerraformService
+
 
 args_checker = Args()
 
@@ -42,6 +47,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 config_manager = ConfigManager()
 
+SFTP_BASE_PATH = os.getenv("SFTP_BASE_PATH", ".")
+LOCAL_APP_DIR = os.getenv("LOCAL_APP_DIR", "./downloaded_apps")
 USERS_TOKENS = []
 EXCLUDED_ROUTES = ["/login", "/test-proxmox", "/test-ldaps", "/save-config", "/get-config"]
 
@@ -420,6 +427,74 @@ def run_terraform():
         return jsonify({'output': output, 'error': None}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/apps', methods=['GET'])
+def list_apps():
+    sftp = connect_sftp()
+    sftp.chdir(SFTP_BASE_PATH)
+    app_folders = []
+
+    for item in sftp.listdir():
+        if item.startswith('.') or item == '.git':
+            continue
+        if not is_directory(sftp, item):
+            continue
+        try:
+            sftp.chdir(item)
+            files = sftp.listdir()
+            if 'description.txt' in files:
+                with sftp.open('description.txt') as f:
+                    description = f.read().decode()
+                app_folders.append({
+                    'name': item,
+                    'description': description.strip(),
+                    'logo_url': f'/apps/{item}/logo'
+                })
+            sftp.chdir('..')
+        except IOError:
+            continue
+    sftp.close()
+    return jsonify(app_folders)
+
+@app.route('/apps/<app_name>/logo', methods=['GET'])
+def get_logo(app_name):
+    sftp = connect_sftp()
+    try:
+        sftp.chdir(f"{SFTP_BASE_PATH}/{app_name}")
+        local_path = os.path.join(tempfile.gettempdir(), f"{app_name}_logo.png")
+        sftp.get('logo.png', local_path)
+        return send_file(local_path, mimetype='image/png')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 404
+    finally:
+        sftp.close()
+
+@app.route('/install/<app_name>', methods=['POST', 'GET'])
+def install_app(app_name):
+    sftp = connect_sftp()
+
+    local_path = os.path.join(LOCAL_APP_DIR, app_name)
+
+    if os.path.exists(local_path):
+        shutil.rmtree(local_path)
+
+    os.makedirs(local_path, exist_ok=True)
+
+    try:
+        sftp.chdir(f"{SFTP_BASE_PATH}/{app_name}")
+        for file in sftp.listdir():
+            sftp.get(file, os.path.join(local_path, file))
+
+        success, output_or_error = execute_terraform(local_path)
+        if not success:
+            return jsonify({'error': 'Terraform error', 'details': output_or_error}), 500
+
+        return jsonify({'status': 'success', 'output': output_or_error})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        sftp.close()
+
 
 
 if __name__ == '__main__':
