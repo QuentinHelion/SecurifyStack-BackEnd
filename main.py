@@ -38,6 +38,7 @@ from infrastructure.data.token import generate_token
 from infrastructure.data.sftp_utils import connect_sftp, is_directory
 from infrastructure.data.terraform_utils import execute_terraform
 from application.services.terraform_service import TerraformService
+from application.services.deployment_service import DeploymentService
 
 
 args_checker = Args()
@@ -46,6 +47,8 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 config_manager = ConfigManager()
+terraform_service = TerraformService(config_manager)
+deployment_service = DeploymentService(config_manager)
 
 SFTP_BASE_PATH = os.getenv("SFTP_BASE_PATH", ".")
 LOCAL_APP_DIR = os.getenv("LOCAL_APP_DIR", "./downloaded_apps")
@@ -495,6 +498,153 @@ def install_app(app_name):
     finally:
         sftp.close()
 
+
+
+@app.route('/validate-config', methods=['POST'])
+def validate_config():
+    data = request.json
+    errors = []
+    vmid_set = set()
+    ip_set = set()
+    roles_windows_server = ['ADDS', 'DNS', 'DHCP', 'IIS']
+    roles_linux_server = ['Web Server', 'Database', 'File Server']
+    os_versions_windows_server = ['2016', '2019', '2022']
+    os_versions_linux_server = [
+        'debian-12.4.0-amd64-netinst.iso',
+        'debian-12.5.0-amd64-netinst.iso', 
+        'noble-server-cloudimg-amd64.img',
+        'ubuntu-24.04-desktop-amd64.iso',
+        'debian-12-standard_12.2-1_amd64.tar.zst',
+        'ubuntu-20.04-standard_20.04-1_amd64.tar.gz',
+        'ubuntu-24.04-standard_24.04-2_amd64.tar.zst'
+    ]
+    machines = data.get('machines', [])
+    if not machines:
+        errors.append('No machines defined.')
+    for idx, m in enumerate(machines):
+        base_type = m.get('baseType') or (m.get('id', '').split('-')[0])
+        name = m.get('name') or m.get('id')
+        adv = m.get('advanced', {})
+        # VMID
+        vmid = adv.get('vmid') or (100 + idx)
+        if not isinstance(vmid, int) or vmid <= 0 or vmid >= 10000:
+            errors.append(f'{name}: Invalid or missing VMID.')
+        if vmid in vmid_set:
+            errors.append(f'{name}: Duplicate VMID ({vmid}).')
+        vmid_set.add(vmid)
+        # Name
+        if not name or not isinstance(name, str) or not name.strip():
+            errors.append(f'{name}: Name is required.')
+        # IP (only require for static mode)
+        if base_type != 'vmPack':
+            ip_mode = adv.get('ip_mode', 'dhcp')
+            if ip_mode == 'static':
+                ip = adv.get('ip_address')
+                if not ip or not isinstance(ip, str) or not is_valid_ip(ip):
+                    errors.append(f'{name}: Invalid or missing IP address.')
+                if ip in ip_set:
+                    errors.append(f'{name}: Duplicate IP ({ip}).')
+                ip_set.add(ip)
+        # OS Version
+        if base_type == 'windowsServer' and adv.get('os_version') not in os_versions_windows_server:
+            errors.append(f'{name}: Invalid or missing Windows Server OS version.')
+        if base_type == 'linuxServer' and adv.get('os_version') not in os_versions_linux_server:
+            errors.append(f'{name}: Invalid or missing Linux Server OS version.')
+        # Roles
+        roles = m.get('roles', [])
+        if base_type == 'windowsServer' and not all(r in roles_windows_server for r in roles):
+            errors.append(f'{name}: Invalid roles selected.')
+        if base_type == 'linuxServer' and not all(r in roles_linux_server for r in roles):
+            errors.append(f'{name}: Invalid roles selected.')
+        # VM Pack count
+        if base_type == 'vmPack':
+            count = m.get('group', {}).get('count')
+            if not isinstance(count, int) or count < 1 or count > 10:
+                errors.append(f'{name}: VM Pack count must be 1-10.')
+        # VLANs
+        vlans = m.get('vlans', [])
+        if vlans:
+            if not isinstance(vlans, list):
+                errors.append(f'{name}: VLANs must be a list.')
+            else:
+                seen_vlans = set()
+                for v in vlans:
+                    if not v or (not isinstance(v, (str, int))):
+                        errors.append(f'{name}: VLANs must be non-empty strings or numbers.')
+                    if v in seen_vlans:
+                        errors.append(f'{name}: Duplicate VLAN ({v}).')
+                    seen_vlans.add(v)
+    if errors:
+        return jsonify({'valid': False, 'errors': errors}), 200
+    return jsonify({'valid': True}), 200
+
+
+def is_valid_ip(ip):
+    import re
+    return re.match(r'^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$', ip) is not None
+
+
+@app.route('/deploy-machines', methods=['POST'])
+def deploy_machines():
+    """Deploy machines from Conceptify using individual Terraform deployments"""
+    try:
+        data = request.json
+        machines = data.get('machines', [])
+        
+        if not machines:
+            return jsonify({'error': 'No machines provided for deployment'}), 400
+        
+        # Deploy all machines using the deployment service
+        results = deployment_service.deploy_machines(machines)
+        
+        # Check if any deployments failed
+        failed_deployments = [r for r in results if r['status'] == 'error']
+        successful_deployments = [r for r in results if r['status'] == 'success']
+        
+        response = {
+            'total_machines': len(machines),
+            'successful': len(successful_deployments),
+            'failed': len(failed_deployments),
+            'results': results
+        }
+        
+        if failed_deployments:
+            response['message'] = f"{len(successful_deployments)} machines deployed successfully, {len(failed_deployments)} failed"
+            return jsonify(response), 207  # Multi-status
+        else:
+            response['message'] = f"All {len(machines)} machines deployed successfully"
+            return jsonify(response), 200
+            
+    except Exception as e:
+        logging.error(f"Error in deploy_machines: {e}", exc_info=True)
+        return jsonify({'error': f'Deployment service error: {str(e)}'}), 500
+
+
+@app.route('/list-deployments', methods=['GET'])
+def list_deployments():
+    """List all current deployments"""
+    try:
+        deployments = deployment_service.list_deployments()
+        return jsonify({'deployments': deployments}), 200
+    except Exception as e:
+        logging.error(f"Error listing deployments: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to list deployments: {str(e)}'}), 500
+
+
+@app.route('/destroy-machine/<machine_id>', methods=['DELETE'])
+def destroy_machine(machine_id):
+    """Destroy a specific machine deployment"""
+    try:
+        result = deployment_service.destroy_machine(machine_id)
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 400
+            
+    except Exception as e:
+        logging.error(f"Error destroying machine {machine_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to destroy machine: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
