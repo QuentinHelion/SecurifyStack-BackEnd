@@ -464,7 +464,7 @@ def get_logo(app_name):
     sftp = connect_sftp()
     try:
         sftp.chdir(f"{SFTP_BASE_PATH}/{app_name}")
-        local_path = os.path.join(tempfile.gettempdir(), f"{app_name}_logo.png")
+        local_path = os.path.join(tempfile.gettempdir(), f"logo.png")
         sftp.get('logo.png', local_path)
         return send_file(local_path, mimetype='image/png')
     except Exception as e:
