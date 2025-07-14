@@ -42,6 +42,93 @@ class DeploymentTrackingService:
         try:
             machines = self._load_deployed_machines()
             
+            # Check if this is a vm-pack deployment
+            if machine_config.get("baseType") == "vmPack":
+                self._add_vmpack_machines(machines, machine_config, deployment_result)
+            else:
+                self._add_single_machine(machines, machine_config, deployment_result)
+            
+            self._save_deployed_machines(machines)
+            
+        except Exception as e:
+            logging.error(f"Error adding deployed machine to tracking: {e}")
+    
+    def _add_vmpack_machines(self, machines, machine_config, deployment_result):
+        """Add multiple machines from a vm-pack deployment"""
+        try:
+            output = deployment_result.get("output", "")
+            
+            # Parse terraform output to extract arrays
+            import re
+            
+            # Extract VM IDs
+            vm_ids_match = re.search(r'vm_ids\s*=\s*\[([\d,\s]+)\]', output)
+            vm_ids = []
+            if vm_ids_match:
+                vm_ids = [int(x.strip()) for x in vm_ids_match.group(1).split(',') if x.strip()]
+            
+            # Extract VM names
+            vm_names_match = re.search(r'vm_names\s*=\s*\[(.*?)\]', output, re.DOTALL)
+            vm_names = []
+            if vm_names_match:
+                names_str = vm_names_match.group(1)
+                vm_names = [name.strip().strip('"') for name in names_str.split(',') if name.strip()]
+            
+            # Extract IP addresses
+            vm_ips_match = re.search(r'vm_ip_addresses\s*=\s*\[(.*?)\]', output, re.DOTALL)
+            vm_ips = []
+            if vm_ips_match:
+                ips_str = vm_ips_match.group(1)
+                vm_ips = [ip.strip().strip('"') for ip in ips_str.split(',') if ip.strip()]
+            
+            # Extract MAC addresses
+            vm_macs_match = re.search(r'vm_mac_addresses\s*=\s*\[(.*?)\]', output, re.DOTALL)
+            vm_macs = []
+            if vm_macs_match:
+                macs_str = vm_macs_match.group(1)
+                vm_macs = [mac.strip().strip('"') for mac in macs_str.split(',') if mac.strip()]
+            
+            # Create entries for each container
+            for i in range(len(vm_ids)):
+                if i < len(vm_ids):
+                    vmid = vm_ids[i]
+                    name = vm_names[i] if i < len(vm_names) else f"{machine_config['name']}-{i+1}"
+                    ip = vm_ips[i] if i < len(vm_ips) else "dhcp"
+                    mac = vm_macs[i] if i < len(vm_macs) else ""
+                    
+                    # Create individual machine config
+                    individual_config = machine_config.copy()
+                    individual_config["id"] = str(vmid)
+                    individual_config["name"] = name
+                    individual_config["vm_id"] = vmid
+                    
+                    deployed_machine = {
+                        "id": str(vmid),
+                        "name": name,
+                        "base_type": machine_config["baseType"],
+                        "deployment_time": datetime.now().isoformat(),
+                        "ip_address": ip,
+                        "mac_address": mac,
+                        "status": "deployed",
+                        "terraform_state_path": f"deployments/{machine_config['id']}/terraform.tfstate",
+                        "config": individual_config,
+                        "deployment_result": deployment_result,
+                        "pack_id": machine_config["id"]  # Reference to original pack
+                    }
+                    
+                    # Remove existing machine with same ID if it exists
+                    machines[:] = [m for m in machines if m["id"] != str(vmid)]
+                    
+                    # Add the new machine
+                    machines.append(deployed_machine)
+                    logging.info(f"Added container to tracking: {name} (ID: {vmid})")
+            
+        except Exception as e:
+            logging.error(f"Error adding vm-pack machines to tracking: {e}")
+    
+    def _add_single_machine(self, machines, machine_config, deployment_result):
+        """Add a single machine to tracking (original logic)"""
+        try:
             # Extract IP address from deployment result
             ip_address = self._extract_ip_from_result(deployment_result)
 
@@ -82,16 +169,14 @@ class DeploymentTrackingService:
             }
             
             # Remove existing machine with same ID if it exists
-            machines = [m for m in machines if m["id"] != id_to_use]
+            machines[:] = [m for m in machines if m["id"] != id_to_use]
             
             # Add the new machine
             machines.append(deployed_machine)
-            
-            self._save_deployed_machines(machines)
             logging.info(f"Added deployed machine to tracking: {machine_config['name']} (ID: {id_to_use})")
             
         except Exception as e:
-            logging.error(f"Error adding deployed machine to tracking: {e}")
+            logging.error(f"Error adding single machine to tracking: {e}")
     
     def _extract_ip_from_result(self, deployment_result):
         """Extract IP address from deployment result"""
