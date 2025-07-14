@@ -6,3 +6,4 @@ infrastructure/persistence/certificats/
 infrastructure/persistence/config.json
 downloaded_apps/
 deployments/
+deployed_machines.json
