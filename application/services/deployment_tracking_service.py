@@ -67,26 +67,40 @@ class DeploymentTrackingService:
             if vm_ids_match:
                 vm_ids = [int(x.strip()) for x in vm_ids_match.group(1).split(',') if x.strip()]
             
-            # Extract VM names
+            # Extract VM names - improved regex to handle + symbols and quotes
             vm_names_match = re.search(r'vm_names\s*=\s*\[(.*?)\]', output, re.DOTALL)
             vm_names = []
             if vm_names_match:
                 names_str = vm_names_match.group(1)
-                vm_names = [name.strip().strip('"') for name in names_str.split(',') if name.strip()]
+                # Split by comma and clean each name
+                raw_names = names_str.split(',')
+                for name in raw_names:
+                    # Remove + symbols, quotes, and whitespace
+                    clean_name = name.strip().replace('+', '').replace('"', '').replace("'", '').strip()
+                    if clean_name:
+                        vm_names.append(clean_name)
             
-            # Extract IP addresses
+            # Extract IP addresses - improved regex
             vm_ips_match = re.search(r'vm_ip_addresses\s*=\s*\[(.*?)\]', output, re.DOTALL)
             vm_ips = []
             if vm_ips_match:
                 ips_str = vm_ips_match.group(1)
-                vm_ips = [ip.strip().strip('"') for ip in ips_str.split(',') if ip.strip()]
+                raw_ips = ips_str.split(',')
+                for ip in raw_ips:
+                    clean_ip = ip.strip().replace('+', '').replace('"', '').replace("'", '').strip()
+                    if clean_ip:
+                        vm_ips.append(clean_ip)
             
-            # Extract MAC addresses
+            # Extract MAC addresses - improved regex
             vm_macs_match = re.search(r'vm_mac_addresses\s*=\s*\[(.*?)\]', output, re.DOTALL)
             vm_macs = []
             if vm_macs_match:
                 macs_str = vm_macs_match.group(1)
-                vm_macs = [mac.strip().strip('"') for mac in macs_str.split(',') if mac.strip()]
+                raw_macs = macs_str.split(',')
+                for mac in raw_macs:
+                    clean_mac = mac.strip().replace('+', '').replace('"', '').replace("'", '').strip()
+                    if clean_mac:
+                        vm_macs.append(clean_mac)
             
             # Create entries for each container
             for i in range(len(vm_ids)):
