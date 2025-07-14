@@ -1,15 +1,15 @@
 {
   "machines": [
     {
-      "id": "6133",
+      "id": "6236",
       "name": "Linux Server 1",
       "base_type": "linuxServer",
-      "deployment_time": "2025-07-14T14:13:12.862773",
-      "ip_address": "192.168.1.78",
+      "deployment_time": "2025-07-14T16:05:23.776388",
+      "ip_address": "192.168.1.80",
       "status": "running",
-      "terraform_state_path": "deployments/6133/terraform.tfstate",
+      "terraform_state_path": "deployments/6236/terraform.tfstate",
       "config": {
-        "id": "6133",
+        "id": "6236",
         "name": "Linux Server 1",
         "roles": [],
         "status": "pending",
@@ -17,16 +17,17 @@
         "advanced": {
           "ip_mode": "dhcp",
           "type": "ct",
-          "os_version": "ubuntu-20.04-standard_20.04-1_amd64.tar.gz"
+          "os_version": "ubuntu-20.04-standard_20.04-1_amd64.tar.gz",
+          "perf": "high"
         },
         "baseType": "linuxServer",
         "vlans": [],
-        "vm_id": 6133
+        "vm_id": 6236
       },
       "deployment_result": {
         "success": true,
         "message": "\u2705 Successfully created machines:",
-        "output": "Terraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  + create\n\nTerraform will perform the following actions:\n\n  # module.linux_ct.proxmox_lxc.container will be created\n  + resource \"proxmox_lxc\" \"container\" {\n      + arch         = \"amd64\"\n      + cmode        = \"tty\"\n      + console      = true\n      + cores        = 2\n      + cpulimit     = 0\n      + cpuunits     = 1024\n      + hostname     = \"Linux-Server-1\"\n      + id           = (known after apply)\n      + memory       = 2048\n      + nameserver   = \"8.8.8.8\"\n      + onboot       = false\n      + ostemplate   = \"local:vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\n      + ostype       = (known after apply)\n      + password     = (sensitive value)\n      + protection   = false\n      + start        = false\n      + swap         = 512\n      + target_node  = \"proxmox\"\n      + tty          = 2\n      + unprivileged = false\n      + unused       = (known after apply)\n      + vmid         = 6133\n\n      + network {\n          + bridge   = \"vmbr0\"\n          + firewall = false\n          + hwaddr   = (known after apply)\n          + ip       = \"dhcp\"\n          + name     = \"eth0\"\n          + tag      = (known after apply)\n          + trunks   = (known after apply)\n          + type     = (known after apply)\n        }\n\n      + rootfs {\n          + size    = \"40G\"\n          + storage = \"local-lvm\"\n          + volume  = (known after apply)\n        }\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + ct_features         = {\n      + fuse         = false\n      + keyctl       = false\n      + mount        = false\n      + nesting      = false\n      + unprivileged = true\n    }\n  + ct_id               = 6133\n  + ct_ip_address       = \"dhcp\"\n  + ct_name             = \"Linux-Server-1\"\n  + ct_network_info     = {\n      + bridge     = \"vmbr0\"\n      + gateway    = \"\"\n      + ip_address = \"\"\n      + ip_config  = \"dhcp\"\n      + vlan_tag   = 0\n    }\n  + ct_node             = \"proxmox\"\n  + ct_resource_summary = {\n      + arch    = \"amd64\"\n      + cores   = 2\n      + disk    = 40\n      + memory  = 2048\n      + storage = \"local-lvm\"\n      + swap    = 512\n    }\n  + ct_status           = false\n  + ct_template_used    = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\nmodule.linux_ct.proxmox_lxc.container: Creating...\nmodule.linux_ct.proxmox_lxc.container: Creation complete after 6s [id=proxmox/lxc/6133]\n\nApply complete! Resources: 1 added, 0 changed, 0 destroyed.\n\nOutputs:\n\nct_features = {\n  \"fuse\" = false\n  \"keyctl\" = false\n  \"mount\" = false\n  \"nesting\" = false\n  \"unprivileged\" = true\n}\nct_id = 6133\nct_ip_address = \"dhcp\"\nct_name = \"Linux-Server-1\"\nct_network_info = {\n  \"bridge\" = \"vmbr0\"\n  \"gateway\" = \"\"\n  \"ip_address\" = \"\"\n  \"ip_config\" = \"dhcp\"\n  \"vlan_tag\" = 0\n}\nct_node = \"proxmox\"\nct_resource_summary = {\n  \"arch\" = \"amd64\"\n  \"cores\" = 2\n  \"disk\" = 40\n  \"memory\" = 2048\n  \"storage\" = \"local-lvm\"\n  \"swap\" = 512\n}\nct_status = false\nct_template_used = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"",
+        "output": "Terraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  + create\n\nTerraform will perform the following actions:\n\n  # module.linux_ct.proxmox_lxc.container will be created\n  + resource \"proxmox_lxc\" \"container\" {\n      + arch         = \"amd64\"\n      + cmode        = \"tty\"\n      + console      = true\n      + cores        = 4\n      + cpulimit     = 0\n      + cpuunits     = 1024\n      + hostname     = \"Linux-Server-1\"\n      + id           = (known after apply)\n      + memory       = 4096\n      + nameserver   = \"8.8.8.8\"\n      + onboot       = false\n      + ostemplate   = \"local:vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\n      + ostype       = (known after apply)\n      + password     = (sensitive value)\n      + protection   = false\n      + start        = false\n      + swap         = 512\n      + target_node  = \"proxmox\"\n      + tty          = 2\n      + unprivileged = false\n      + unused       = (known after apply)\n      + vmid         = 6236\n\n      + network {\n          + bridge   = \"vmbr0\"\n          + firewall = false\n          + hwaddr   = (known after apply)\n          + ip       = \"dhcp\"\n          + name     = \"eth0\"\n          + tag      = (known after apply)\n          + trunks   = (known after apply)\n          + type     = (known after apply)\n        }\n\n      + rootfs {\n          + size    = \"80G\"\n          + storage = \"local-lvm\"\n          + volume  = (known after apply)\n        }\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + ct_features         = {\n      + fuse         = false\n      + keyctl       = false\n      + mount        = false\n      + nesting      = false\n      + unprivileged = true\n    }\n  + ct_id               = 6236\n  + ct_ip_address       = \"dhcp\"\n  + ct_name             = \"Linux-Server-1\"\n  + ct_network_info     = {\n      + bridge     = \"vmbr0\"\n      + gateway    = \"\"\n      + ip_address = \"\"\n      + ip_config  = \"dhcp\"\n      + vlan_tag   = 0\n    }\n  + ct_node             = \"proxmox\"\n  + ct_resource_summary = {\n      + arch    = \"amd64\"\n      + cores   = 4\n      + disk    = 80\n      + memory  = 4096\n      + storage = \"local-lvm\"\n      + swap    = 512\n    }\n  + ct_status           = false\n  + ct_template_used    = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\nmodule.linux_ct.proxmox_lxc.container: Creating...\nmodule.linux_ct.proxmox_lxc.container: Still creating... [00m10s elapsed]\nmodule.linux_ct.proxmox_lxc.container: Still creating... [00m20s elapsed]\nmodule.linux_ct.proxmox_lxc.container: Still creating... [00m30s elapsed]\nmodule.linux_ct.proxmox_lxc.container: Creation complete after 30s [id=proxmox/lxc/6236]\n\nApply complete! Resources: 1 added, 0 changed, 0 destroyed.\n\nOutputs:\n\nct_features = {\n  \"fuse\" = false\n  \"keyctl\" = false\n  \"mount\" = false\n  \"nesting\" = false\n  \"unprivileged\" = true\n}\nct_id = 6236\nct_ip_address = \"dhcp\"\nct_name = \"Linux-Server-1\"\nct_network_info = {\n  \"bridge\" = \"vmbr0\"\n  \"gateway\" = \"\"\n  \"ip_address\" = \"\"\n  \"ip_config\" = \"dhcp\"\n  \"vlan_tag\" = 0\n}\nct_node = \"proxmox\"\nct_resource_summary = {\n  \"arch\" = \"amd64\"\n  \"cores\" = 4\n  \"disk\" = 80\n  \"memory\" = 4096\n  \"storage\" = \"local-lvm\"\n  \"swap\" = 512\n}\nct_status = false\nct_template_used = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"",
         "summary": {
           "machine_name": "Linux Server 1",
           "status": "Successfully deployed",
@@ -38,39 +39,44 @@
           "ssh_connections": []
         }
       },
-      "last_updated": "2025-07-14T15:22:05.335354"
+      "last_updated": "2025-07-14T16:46:35.476845"
     },
     {
-      "id": "6038",
-      "name": "Linux Server 2",
-      "base_type": "linuxServer",
-      "deployment_time": "2025-07-14T14:13:55.637948",
-      "ip_address": "192.168.1.77",
+      "id": "5000",
+      "name": "VM Pack 1",
+      "base_type": "vmPack",
+      "deployment_time": "2025-07-14T16:45:22.115849",
+      "ip_address": "192.168.1.81",
       "status": "running",
-      "terraform_state_path": "deployments/6038/terraform.tfstate",
+      "terraform_state_path": "deployments/5000/terraform.tfstate",
       "config": {
-        "id": "6038",
-        "name": "Linux Server 2",
+        "id": "5000",
+        "name": "VM Pack 1",
         "roles": [],
         "status": "pending",
         "info": "",
         "advanced": {
-          "ip_mode": "dhcp",
+          "ip_mode": "dhcp"
+        },
+        "group": {
+          "count": 2,
+          "os": "Debian",
+          "vlans": [],
           "type": "ct",
           "os_version": "ubuntu-20.04-standard_20.04-1_amd64.tar.gz"
         },
-        "baseType": "linuxServer",
+        "baseType": "vmPack",
         "vlans": [],
-        "vm_id": 6038
+        "vm_id": 5000
       },
       "deployment_result": {
         "success": true,
         "message": "\u2705 Successfully created machines:",
-        "output": "Terraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  + create\n\nTerraform will perform the following actions:\n\n  # module.linux_ct.proxmox_lxc.container will be created\n  + resource \"proxmox_lxc\" \"container\" {\n      + arch         = \"amd64\"\n      + cmode        = \"tty\"\n      + console      = true\n      + cores        = 2\n      + cpulimit     = 0\n      + cpuunits     = 1024\n      + hostname     = \"Linux-Server-2\"\n      + id           = (known after apply)\n      + memory       = 2048\n      + nameserver   = \"8.8.8.8\"\n      + onboot       = false\n      + ostemplate   = \"local:vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\n      + ostype       = (known after apply)\n      + password     = (sensitive value)\n      + protection   = false\n      + start        = false\n      + swap         = 512\n      + target_node  = \"proxmox\"\n      + tty          = 2\n      + unprivileged = false\n      + unused       = (known after apply)\n      + vmid         = 6038\n\n      + network {\n          + bridge   = \"vmbr0\"\n          + firewall = false\n          + hwaddr   = (known after apply)\n          + ip       = \"dhcp\"\n          + name     = \"eth0\"\n          + tag      = (known after apply)\n          + trunks   = (known after apply)\n          + type     = (known after apply)\n        }\n\n      + rootfs {\n          + size    = \"40G\"\n          + storage = \"local-lvm\"\n          + volume  = (known after apply)\n        }\n    }\n\nPlan: 1 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + ct_features         = {\n      + fuse         = false\n      + keyctl       = false\n      + mount        = false\n      + nesting      = false\n      + unprivileged = true\n    }\n  + ct_id               = 6038\n  + ct_ip_address       = \"dhcp\"\n  + ct_name             = \"Linux-Server-2\"\n  + ct_network_info     = {\n      + bridge     = \"vmbr0\"\n      + gateway    = \"\"\n      + ip_address = \"\"\n      + ip_config  = \"dhcp\"\n      + vlan_tag   = 0\n    }\n  + ct_node             = \"proxmox\"\n  + ct_resource_summary = {\n      + arch    = \"amd64\"\n      + cores   = 2\n      + disk    = 40\n      + memory  = 2048\n      + storage = \"local-lvm\"\n      + swap    = 512\n    }\n  + ct_status           = false\n  + ct_template_used    = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\nmodule.linux_ct.proxmox_lxc.container: Creating...\nmodule.linux_ct.proxmox_lxc.container: Still creating... [00m10s elapsed]\nmodule.linux_ct.proxmox_lxc.container: Still creating... [00m20s elapsed]\nmodule.linux_ct.proxmox_lxc.container: Creation complete after 27s [id=proxmox/lxc/6038]\n\nApply complete! Resources: 1 added, 0 changed, 0 destroyed.\n\nOutputs:\n\nct_features = {\n  \"fuse\" = false\n  \"keyctl\" = false\n  \"mount\" = false\n  \"nesting\" = false\n  \"unprivileged\" = true\n}\nct_id = 6038\nct_ip_address = \"dhcp\"\nct_name = \"Linux-Server-2\"\nct_network_info = {\n  \"bridge\" = \"vmbr0\"\n  \"gateway\" = \"\"\n  \"ip_address\" = \"\"\n  \"ip_config\" = \"dhcp\"\n  \"vlan_tag\" = 0\n}\nct_node = \"proxmox\"\nct_resource_summary = {\n  \"arch\" = \"amd64\"\n  \"cores\" = 2\n  \"disk\" = 40\n  \"memory\" = 2048\n  \"storage\" = \"local-lvm\"\n  \"swap\" = 512\n}\nct_status = false\nct_template_used = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"",
+        "output": "Terraform used the selected providers to generate the following execution\nplan. Resource actions are indicated with the following symbols:\n  + create\n\nTerraform will perform the following actions:\n\n  # proxmox_lxc.container[0] will be created\n  + resource \"proxmox_lxc\" \"container\" {\n      + arch         = \"amd64\"\n      + cmode        = \"tty\"\n      + console      = true\n      + cores        = 2\n      + cpulimit     = 0\n      + cpuunits     = 1024\n      + hostname     = \"VM-Pack-1-1\"\n      + id           = (known after apply)\n      + memory       = 2048\n      + nameserver   = \"8.8.8.8\"\n      + onboot       = true\n      + ostemplate   = \"local:vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\n      + ostype       = (known after apply)\n      + password     = (sensitive value)\n      + protection   = false\n      + start        = false\n      + swap         = 512\n        tags         = null\n      + target_node  = \"proxmox\"\n      + tty          = 2\n      + unprivileged = false\n      + unused       = (known after apply)\n      + vmid         = 5000\n\n      + network {\n          + bridge   = \"vmbr0\"\n          + firewall = false\n          + hwaddr   = (known after apply)\n          + ip       = \"dhcp\"\n          + name     = \"eth0\"\n          + tag      = (known after apply)\n          + trunks   = (known after apply)\n          + type     = (known after apply)\n        }\n\n      + rootfs {\n          + size    = \"20G\"\n          + storage = \"local-lvm\"\n          + volume  = (known after apply)\n        }\n    }\n\n  # proxmox_lxc.container[1] will be created\n  + resource \"proxmox_lxc\" \"container\" {\n      + arch         = \"amd64\"\n      + cmode        = \"tty\"\n      + console      = true\n      + cores        = 2\n      + cpulimit     = 0\n      + cpuunits     = 1024\n      + hostname     = \"VM-Pack-1-2\"\n      + id           = (known after apply)\n      + memory       = 2048\n      + nameserver   = \"8.8.8.8\"\n      + onboot       = true\n      + ostemplate   = \"local:vztmpl/ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\n      + ostype       = (known after apply)\n      + password     = (sensitive value)\n      + protection   = false\n      + start        = false\n      + swap         = 512\n        tags         = null\n      + target_node  = \"proxmox\"\n      + tty          = 2\n      + unprivileged = false\n      + unused       = (known after apply)\n      + vmid         = 5001\n\n      + network {\n          + bridge   = \"vmbr0\"\n          + firewall = false\n          + hwaddr   = (known after apply)\n          + ip       = \"dhcp\"\n          + name     = \"eth0\"\n          + tag      = (known after apply)\n          + trunks   = (known after apply)\n          + type     = (known after apply)\n        }\n\n      + rootfs {\n          + size    = \"20G\"\n          + storage = \"local-lvm\"\n          + volume  = (known after apply)\n        }\n    }\n\nPlan: 2 to add, 0 to change, 0 to destroy.\n\nChanges to Outputs:\n  + vm_ids              = [\n      + 5000,\n      + 5001,\n    ]\n  + vm_ip_addresses     = [\n      + \"dhcp\",\n      + \"dhcp\",\n    ]\n  + vm_mac_addresses    = [\n      + (known after apply),\n      + (known after apply),\n    ]\n  + vm_names            = [\n      + \"VM-Pack-1-1\",\n      + \"VM-Pack-1-2\",\n    ]\n  + vm_nodes            = [\n      + \"proxmox\",\n      + \"proxmox\",\n    ]\n  + vm_pack_details     = [\n      + {\n          + id             = 5000\n          + index          = 0\n          + ip             = \"dhcp\"\n          + mac            = (known after apply)\n          + name           = \"VM-Pack-1-1\"\n          + ssh_connection = {\n              + command = \"ssh root@dhcp\"\n              + host    = \"dhcp\"\n              + port    = 22\n              + user    = \"root\"\n            }\n        },\n      + {\n          + id             = 5001\n          + index          = 1\n          + ip             = \"dhcp\"\n          + mac            = (known after apply)\n          + name           = \"VM-Pack-1-2\"\n          + ssh_connection = {\n              + command = \"ssh root@dhcp\"\n              + host    = \"dhcp\"\n              + port    = 22\n              + user    = \"root\"\n            }\n        },\n    ]\n  + vm_resource_summary = {\n      + base_name     = \"VM Pack 1\"\n      + cores_per_vm  = 2\n      + disk_per_vm   = 20\n      + memory_per_vm = 2048\n      + start_vmid    = 5000\n      + storage       = \"local-lvm\"\n      + swap_per_vm   = 512\n      + vm_count      = 2\n    }\n  + vm_ssh_connections  = [\n      + {\n          + command = \"ssh root@dhcp\"\n          + host    = \"dhcp\"\n          + port    = 22\n          + user    = \"root\"\n        },\n      + {\n          + command = \"ssh root@dhcp\"\n          + host    = \"dhcp\"\n          + port    = 22\n          + user    = \"root\"\n        },\n    ]\n  + vm_template_used    = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"\nproxmox_lxc.container[1]: Creating...\nproxmox_lxc.container[0]: Creating...\nproxmox_lxc.container[0]: Still creating... [00m10s elapsed]\nproxmox_lxc.container[1]: Still creating... [00m10s elapsed]\nproxmox_lxc.container[1]: Creation complete after 12s [id=proxmox/lxc/5001]\nproxmox_lxc.container[0]: Creation complete after 12s [id=proxmox/lxc/5000]\n\u2577\n\u2502 Warning: Value for undeclared variable\n\u2502 \n\u2502 The root module does not declare a variable named \"gateway\" but a value was\n\u2502 found in file \"terraform.tfvars\". If you meant to use this value, add a\n\u2502 \"variable\" block to the configuration.\n\u2502 \n\u2502 To silence these warnings, use TF_VAR_... environment variables to provide\n\u2502 certain \"global\" settings to all configurations in your organization. To\n\u2502 reduce the verbosity of these warnings, use the -compact-warnings option.\n\u2575\n\nApply complete! Resources: 2 added, 0 changed, 0 destroyed.\n\nOutputs:\n\nvm_ids = [\n  5000,\n  5001,\n]\nvm_ip_addresses = [\n  \"dhcp\",\n  \"dhcp\",\n]\nvm_mac_addresses = [\n  \"BC:24:11:5B:F1:AA\",\n  \"BC:24:11:3C:3B:BB\",\n]\nvm_names = [\n  \"VM-Pack-1-1\",\n  \"VM-Pack-1-2\",\n]\nvm_nodes = [\n  \"proxmox\",\n  \"proxmox\",\n]\nvm_pack_details = [\n  {\n    \"id\" = 5000\n    \"index\" = 0\n    \"ip\" = \"dhcp\"\n    \"mac\" = \"BC:24:11:5B:F1:AA\"\n    \"name\" = \"VM-Pack-1-1\"\n    \"ssh_connection\" = {\n      \"command\" = \"ssh root@dhcp\"\n      \"host\" = \"dhcp\"\n      \"port\" = 22\n      \"user\" = \"root\"\n    }\n  },\n  {\n    \"id\" = 5001\n    \"index\" = 1\n    \"ip\" = \"dhcp\"\n    \"mac\" = \"BC:24:11:3C:3B:BB\"\n    \"name\" = \"VM-Pack-1-2\"\n    \"ssh_connection\" = {\n      \"command\" = \"ssh root@dhcp\"\n      \"host\" = \"dhcp\"\n      \"port\" = 22\n      \"user\" = \"root\"\n    }\n  },\n]\nvm_resource_summary = {\n  \"base_name\" = \"VM Pack 1\"\n  \"cores_per_vm\" = 2\n  \"disk_per_vm\" = 20\n  \"memory_per_vm\" = 2048\n  \"start_vmid\" = 5000\n  \"storage\" = \"local-lvm\"\n  \"swap_per_vm\" = 512\n  \"vm_count\" = 2\n}\nvm_ssh_connections = [\n  {\n    \"command\" = \"ssh root@dhcp\"\n    \"host\" = \"dhcp\"\n    \"port\" = 22\n    \"user\" = \"root\"\n  },\n  {\n    \"command\" = \"ssh root@dhcp\"\n    \"host\" = \"dhcp\"\n    \"port\" = 22\n    \"user\" = \"root\"\n  },\n]\nvm_template_used = \"ubuntu-20.04-standard_20.04-1_amd64.tar.gz\"",
         "summary": {
-          "machine_name": "Linux Server 2",
+          "machine_name": "VM Pack 1",
           "status": "Successfully deployed",
-          "resources_created": 1,
+          "resources_created": 2,
           "vm_ids": [],
           "vm_names": [],
           "vm_ips": [],
@@ -78,7 +84,7 @@
           "ssh_connections": []
         }
       },
-      "last_updated": "2025-07-14T15:22:05.346624"
+      "last_updated": "2025-07-14T16:46:35.488111"
     }
   ]
 }

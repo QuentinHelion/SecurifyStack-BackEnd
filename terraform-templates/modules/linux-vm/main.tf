@@ -48,6 +48,9 @@ resource "proxmox_vm_qemu" "vm" {
   # SSH Configuration
   sshkeys = var.ssh_keys != "" ? var.ssh_keys : null
   
+  # User Configuration
+  ciuser = var.username
+  
   # VM Settings
   onboot        = var.start_on_boot
   tablet        = var.tablet

@@ -92,50 +92,7 @@ class DeploymentService:
         if result["success"]:
             try:
                 self.tracking_service.add_deployed_machine(machine, result)
-                
-                # Try to get VM ID from tfvars for health check
-                vm_id = None
-                try:
-                    with open(tfvars_path, 'r') as f:
-                        tfvars_content = f.read()
-                        import re
-                        vm_id_match = re.search(r'vm_id\s*=\s*(\d+)', tfvars_content)
-                        if vm_id_match:
-                            vm_id = int(vm_id_match.group(1))
-                except:
-                    pass
-                
-                # Start the VM/Container via Proxmox API after deployment
-                if vm_id:
-                    logging.info(f"Starting VM/Container {vm_id} via Proxmox API...")
-                    start_success = self._start_vm_via_proxmox_api(vm_id)
-                    if start_success:
-                        logging.info(f"VM/Container {vm_id} started successfully")
-                    else:
-                        logging.warning(f"Failed to start VM/Container {vm_id}, but deployment was successful")
-
-                # Retry to get real IP address for up to 60 seconds
-                import time
-                ip_found = False
-                health_info = None
-                if vm_id:
-                    for _ in range(12):  # 12 * 5s = 60s
-                        health_info = self.health_check_service.comprehensive_health_check(machine_id, vm_id)
-                        ip = health_info.get("ip_address") if health_info else None
-                        if ip and ip != "Unknown" and ip.lower() not in ("dhcp", "static") and not ip.startswith("127.") and not ip.startswith("0."):
-                            ip_found = True
-                            break
-                        time.sleep(5)
-                    if ip_found:
-                        self.tracking_service.update_machine_status(
-                            machine_id,
-                            "running",
-                            health_info["ip_address"]
-                        )
-                        result["ip_address"] = health_info["ip_address"]
-                        result["message"] = f"✅ {machine_name} deployed successfully!\n🌐 IP Address: {health_info['ip_address']}\n🔗 SSH: ssh root@{health_info['ip_address']}"
-                    else:
-                        logging.warning(f"Could not determine real IP address for {machine_id} after 60s")
+                logging.info(f"✅ {machine_name} deployed successfully! Use the dashboard buttons to start and get IP.")
                 
             except Exception as e:
                 logging.error(f"Error adding machine to tracking: {e}")
@@ -475,12 +432,17 @@ class DeploymentService:
         
         # Common variables
         tfvars = {
-            "vm_name": vm_name,
-            "vm_id": advanced.get("vmid", next_vmid),
             "proxmox_server": self.config_manager.get("PROXMOX_SERVER"),
             "proxmox_token": self.config_manager.get("PVEAPITOKEN"),
             "proxmox_node": self.config_manager.get("NODE"),
         }
+        
+        # Add vm_name and vm_id only for non-vmPack types
+        if base_type != "vmPack":
+            tfvars.update({
+                "vm_name": vm_name,
+                "vm_id": advanced.get("vmid", next_vmid),
+            })
         
         # Type-specific variables
         if base_type == "linuxServer":
@@ -493,7 +455,6 @@ class DeploymentService:
                 "memory": self._get_memory_from_perf(advanced.get("perf", "medium")),
                 "disk_size": self._get_disk_from_perf(advanced.get("perf", "medium")),
                 "username": advanced.get("username", "root"),
-                "password": advanced.get("password", "root"),
                 "ssh_keys": advanced.get("sshKey", ""),  # New variable name
                 "ssh_key": advanced.get("sshKey", ""),   # Legacy compatibility
                 "network_bridge": "vmbr0",
@@ -528,7 +489,6 @@ class DeploymentService:
                 "memory": self._get_memory_from_perf(advanced.get("perf", "medium")),
                 "disk_size": self._get_disk_from_perf(advanced.get("perf", "medium")),
                 "username": advanced.get("username", "Administrator"),
-                "password": advanced.get("password", "root"),
                 "network_bridge": "vmbr0",
                 "network_tag": 0,  # Remove VLAN tag
                 "nameserver": "8.8.8.8",
@@ -550,14 +510,14 @@ class DeploymentService:
                 "cores": 2,
                 "memory": 2048,
                 "disk_size": 20,
+                "swap": 512,
                 "network_bridge": "vmbr0",
                 "network_tag": 0,  # Remove VLAN tag
                 "gateway": "192.168.1.1",
                 "nameserver": "8.8.8.8",
                 "username": advanced.get("username", "root"),
-                "password": advanced.get("password", "root"),
+                "password": advanced.get("password", "rootroot"),
                 "ssh_keys": advanced.get("sshKey", ""),
-                "os_type": "auto",  # Auto-detect OS type based on template name
             })
         
         # Convert to terraform.tfvars format
@@ -839,7 +799,7 @@ class DeploymentService:
         
         message += "\n".join(machines)
         
-        return message.strip()
+        return message.strip() 
     
     def update_machine(self, machine_id, updated_config):
         """Update an existing machine using its terraform state"""

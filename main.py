@@ -1045,26 +1045,35 @@ def refresh_ips():
             machine_name = machine.get('name', 'Unknown')
             vm_id = machine_id  # Use machine ID as VM ID
             
+            logging.info(f"Processing machine: {machine_name} (ID: {machine_id}, VM ID: {vm_id})")
+            
             try:
                 real_ip = None
                 
-                # Method 1: Try interfaces endpoint
+                # Always use LXC container logic for IP fetching
                 try:
+                    # Method 1: Try interfaces endpoint
+                    logging.info(f"Trying interfaces endpoint for VM {vm_id}")
                     interfaces = proxmox.nodes(proxmox_node).lxc(int(vm_id)).interfaces.get()
+                    logging.info(f"Interfaces response for {vm_id}: {interfaces}")
                     
                     for iface in interfaces:
                         if iface.get('name') == 'eth0':
                             inet = iface.get('inet')
+                            logging.info(f"Found eth0 interface for {vm_id}: {inet}")
                             if inet and '.' in str(inet) and not str(inet).startswith('127.'):
                                 real_ip = str(inet).split('/')[0]
+                                logging.info(f"Extracted IP for {vm_id}: {real_ip}")
                                 break
                 except Exception as e:
-                    logging.warning(f"Interfaces call failed for {vm_id}: {e}")
+                    logging.warning(f"LXC interfaces call failed for {vm_id}: {e}")
                 
                 # Method 2: Try config endpoint if interfaces didn't work
                 if not real_ip:
                     try:
+                        logging.info(f"Trying config endpoint for VM {vm_id}")
                         config = proxmox.nodes(proxmox_node).lxc(int(vm_id)).config.get()
+                        logging.info(f"Config response for {vm_id}: {config}")
                         
                         for key, value in config.items():
                             if key.startswith('net') and 'ip=' in str(value) and 'dhcp' not in str(value).lower():
@@ -1072,20 +1081,24 @@ def refresh_ips():
                                 ip_match = re.search(r'ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', str(value))
                                 if ip_match:
                                     real_ip = ip_match.group(1)
+                                    logging.info(f"Extracted IP from config for {vm_id}: {real_ip}")
                                     break
                     except Exception as e:
-                        logging.warning(f"Config call failed for {vm_id}: {e}")
+                        logging.warning(f"LXC config call failed for {vm_id}: {e}")
                 
                 # Update machine status
                 if real_ip:
+                    logging.info(f"Updating machine {machine_id} with IP: {real_ip}")
                     tracking_service.update_machine_status(machine_id, 'running', real_ip)
                     updated_count += 1
                     results.append(f"{machine_name}: {real_ip}")
                 else:
                     current_ip = machine.get('ip_address', 'dhcp')
+                    logging.warning(f"No IP found for {machine_id}, keeping current: {current_ip}")
                     results.append(f"{machine_name}: {current_ip} (no IP found)")
                     
             except Exception as e:
+                logging.error(f"Error processing machine {machine_id}: {e}")
                 results.append(f"{machine_name}: error - {str(e)}")
         
         return jsonify({

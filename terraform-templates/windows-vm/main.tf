@@ -56,6 +56,7 @@ module "windows_vm" {
   
   # User Configuration
   username  = var.username
+  ssh_keys  = var.ssh_keys
   
   # VM Settings
   start_on_boot     = var.start_on_boot
@@ -67,6 +68,4 @@ module "windows_vm" {
   full_clone        = var.full_clone
   tags              = var.tags
   
-  # Windows-specific settings
-  balloon_memory = var.balloon_memory
 } 

@@ -126,7 +126,6 @@ variable "network_bridge" {
 variable "network_tag" {
   description = "VLAN tag (0 for no tag)"
   type        = number
-  default     = 0
 }
 
 variable "network_firewall" {
@@ -175,11 +174,18 @@ variable "search_domain" {
 variable "username" {
   description = "Username for the VM"
   type        = string
-  default     = "Administrator"
+  default     = "debian"
 }
 
 variable "password" {
   description = "Password for the user"
+  type        = string
+  default     = "debian"
+  sensitive   = true
+}
+
+variable "ssh_keys" {
+  description = "SSH public keys"
   type        = string
   default     = ""
   sensitive   = true
@@ -240,9 +246,4 @@ variable "tags" {
   default     = ""
 }
 
-# Windows-specific settings
-variable "balloon_memory" {
-  description = "Enable memory ballooning for Windows VMs"
-  type        = bool
-  default     = true
-} 
+ 
