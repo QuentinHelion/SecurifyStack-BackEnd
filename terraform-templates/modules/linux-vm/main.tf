@@ -22,6 +22,7 @@ resource "proxmox_vm_qemu" "vm" {
   cpu     = var.cpu_type
   bios    = var.bios
   numa    = var.numa_enabled
+  os_type = var.os_type
   
   # Disk Configuration
   disk {

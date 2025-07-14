@@ -283,4 +283,15 @@ variable "tags" {
   description = "Tags for the VM"
   type        = string
   default     = ""
+}
+
+# OS Type
+variable "os_type" {
+  description = "Operating system type"
+  type        = string
+  default     = "unmanaged"
+  validation {
+    condition     = contains(["unmanaged", "debian", "ubuntu", "centos", "fedora", "opensuse", "archlinux", "alpine", "gentoo"], var.os_type)
+    error_message = "OS type must be one of: unmanaged, debian, ubuntu, centos, fedora, opensuse, archlinux, alpine, gentoo."
+  }
 } 

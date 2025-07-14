@@ -18,8 +18,6 @@ resource "proxmox_lxc" "container" {
   cores       = var.cores
   memory      = var.memory
   swap        = var.swap
-  arch        = var.architecture
-  ostype      = var.os_type
   
   # Root filesystem
   rootfs {
@@ -40,30 +38,11 @@ resource "proxmox_lxc" "container" {
   # SSH Configuration
   ssh_public_keys = var.ssh_keys != "" ? var.ssh_keys : null
   
-  # Container settings
-  unprivileged    = var.unprivileged
-  start           = var.start_on_creation
-  onboot          = var.start_on_boot
-  protection      = var.protection
   
   # DNS Configuration
   nameserver   = var.nameserver
-  
-  # Console settings
-  console = var.console_enabled
-  tty     = var.tty_count
-  
-  # Features - only set nesting as other features require special permissions
-  features {
-    nesting = var.features_nesting
-  }
-  
-  # Resource limits
-  cmode = var.console_mode
-  
-  # Tags for organization
-  tags = var.tags != "" ? var.tags : null
-  
+
+
   lifecycle {
     ignore_changes = [
       # Ignore changes to these attributes to prevent unnecessary recreation

@@ -430,6 +430,7 @@ class DeploymentService:
                 "nameserver": "8.8.8.8",
                 "username": "user",
                 "ssh_keys": "",
+                "os_type": "auto",  # Auto-detect OS type based on template name
             })
         
         # Convert to terraform.tfvars format

@@ -20,6 +20,13 @@ provider "proxmox" {
 # Determine if template is for container or VM based on template name
 locals {
   is_container_template = can(regex(".*\\.(tar\\.zst|tar\\.gz|tar\\.xz)$", var.template_name))
+  
+  # Detect OS type based on template name
+  detected_os_type = var.os_type == "auto" ? (
+    can(regex(".*debian.*", lower(var.template_name)) ? "debian" : (
+      can(regex(".*ubuntu.*", lower(var.template_name)) ? "ubuntu" : "unmanaged"
+    ))
+  ) : var.os_type
 }
 
 # Create multiple containers using a loop (for container templates)
@@ -44,7 +51,7 @@ module "vm_pack_container" {
   # Container-specific variables
   swap         = 512
   architecture = "amd64"
-  os_type      = "unmanaged"
+  os_type      = local.detected_os_type
   
   # Disk Configuration
   disk_size    = var.disk_size
@@ -97,6 +104,7 @@ module "vm_pack_vm" {
   cpu_type     = "host"
   bios         = "seabios"
   numa_enabled = false
+  os_type      = local.detected_os_type
   
   # Disk Configuration
   disk_size     = var.disk_size

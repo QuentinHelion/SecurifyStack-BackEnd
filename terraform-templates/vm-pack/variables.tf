@@ -109,4 +109,10 @@ variable "ssh_keys" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "os_type" {
+  description = "Operating system type"
+  type        = string
+  default     = "auto"  # Auto-detect based on template
 } 
