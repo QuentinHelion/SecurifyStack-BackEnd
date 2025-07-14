@@ -35,7 +35,14 @@ variable "template_name" {
 variable "username" {
   description = "Username for the container"
   type        = string
-  default     = "user"
+  default     = "root"
+}
+
+variable "password" {
+  description = "Password for the container"
+  type        = string
+  default     = "rootroot"
+  sensitive   = true
 }
 
 # Container Configuration

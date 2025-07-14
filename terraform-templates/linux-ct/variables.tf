@@ -40,7 +40,14 @@ variable "template_name" {
 variable "username" {
   description = "Username for the container"
   type        = string
-  default     = "user"
+  default     = "root"
+}
+
+variable "password" {
+  description = "Password for the user"
+  type        = string
+  default     = "rootroot"
+  sensitive   = true
 }
 
 variable "cores" {
@@ -96,7 +103,6 @@ variable "network_bridge" {
 variable "network_tag" {
   description = "VLAN tag (0 for no tag)"
   type        = number
-  default     = 0
 }
 
 variable "network_firewall" {

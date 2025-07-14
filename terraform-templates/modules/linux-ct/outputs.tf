@@ -104,6 +104,11 @@ output "ct_resource_summary" {
   }
 }
 
+output "ct_ip_address" {
+  description = "The IP address of the container (if available)"
+  value       = proxmox_lxc.container.network[0].ip
+}
+
 output "ct_features" {
   description = "Container features configuration (legacy)"
   value = {

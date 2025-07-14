@@ -38,6 +38,8 @@ resource "proxmox_lxc" "container" {
   # SSH Configuration
   ssh_public_keys = var.ssh_keys != "" ? var.ssh_keys : null
   
+  # User Configuration
+  password = var.password != "" ? var.password : null
   
   # DNS Configuration
   nameserver   = var.nameserver

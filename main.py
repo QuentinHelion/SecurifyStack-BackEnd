@@ -39,6 +39,8 @@ from infrastructure.data.sftp_utils import connect_sftp, is_directory
 from infrastructure.data.terraform_utils import execute_terraform
 from application.services.terraform_service import TerraformService
 from application.services.deployment_service import DeploymentService
+from application.services.deployment_tracking_service import DeploymentTrackingService
+from application.services.health_check_service import HealthCheckService
 
 
 args_checker = Args()
@@ -49,6 +51,8 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 config_manager = ConfigManager()
 terraform_service = TerraformService(config_manager)
 deployment_service = DeploymentService(config_manager)
+tracking_service = DeploymentTrackingService(config_manager)
+health_check_service = HealthCheckService(config_manager)
 
 SFTP_BASE_PATH = os.getenv("SFTP_BASE_PATH", ".")
 LOCAL_APP_DIR = os.getenv("LOCAL_APP_DIR", "./downloaded_apps")
@@ -645,6 +649,470 @@ def destroy_machine(machine_id):
     except Exception as e:
         logging.error(f"Error destroying machine {machine_id}: {e}", exc_info=True)
         return jsonify({'error': f'Failed to destroy machine: {str(e)}'}), 500
+
+
+@app.route('/deployed-machines', methods=['GET'])
+def get_deployed_machines():
+    """Get all deployed machines for Conceptify display"""
+    try:
+        machines = tracking_service.get_deployed_machines()
+        return jsonify({'machines': machines}), 200
+    except Exception as e:
+        logging.error(f"Error getting deployed machines: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to get deployed machines: {str(e)}'}), 500
+
+
+@app.route('/machine-health/<machine_id>', methods=['GET'])
+def get_machine_health(machine_id):
+    """Get health status of a specific machine"""
+    try:
+        machine = tracking_service.get_machine_by_id(machine_id)
+        if not machine:
+            return jsonify({'error': 'Machine not found'}), 404
+        
+        # Extract VM ID from machine config
+        vm_id = None
+        try:
+            config = machine.get('config', {})
+            # Try to get VM ID from various sources
+            if 'vm_id' in config:
+                vm_id = config['vm_id']
+            elif 'id' in config:
+                # If no vm_id, try to extract from deployment
+                deployment_path = f"deployments/{machine_id}/terraform.tfvars"
+                if os.path.exists(deployment_path):
+                    with open(deployment_path, 'r') as f:
+                        content = f.read()
+                        import re
+                        vm_id_match = re.search(r'vm_id\s*=\s*(\d+)', content)
+                        if vm_id_match:
+                            vm_id = int(vm_id_match.group(1))
+        except:
+            pass
+        
+        if vm_id:
+            health_info = health_check_service.comprehensive_health_check(machine_id, vm_id)
+            if health_info:
+                # Update tracking with latest health info
+                tracking_service.update_machine_status(
+                    machine_id, 
+                    health_info["status"], 
+                    health_info["ip_address"]
+                )
+                return jsonify(health_info), 200
+        
+        return jsonify({'error': 'Unable to perform health check'}), 500
+        
+    except Exception as e:
+        logging.error(f"Error getting machine health {machine_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to get machine health: {str(e)}'}), 500
+
+
+@app.route('/update-machine/<machine_id>', methods=['PUT'])
+def update_machine(machine_id):
+    """Update a deployed machine's configuration"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Update machine configuration
+        result = deployment_service.update_machine(machine_id, data)
+        
+        if result.get('success'):
+            return jsonify({'message': 'Machine updated successfully'}), 200
+        else:
+            return jsonify({'error': result.get('error', 'Failed to update machine')}), 500
+    except Exception as e:
+        logging.error(f"Error updating machine {machine_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to update machine: {str(e)}'}), 500
+
+
+@app.route('/boot-all-machines', methods=['POST'])
+def boot_all_machines():
+    """Boot all deployed machines via Proxmox API"""
+    try:
+        logging.info("=== Starting boot all machines operation ===")
+        
+        # Get all deployed machines
+        machines = tracking_service.get_deployed_machines()
+        logging.info(f"Found {len(machines)} machines in deployed_machines.json")
+        
+        if not machines:
+            logging.warning("No deployed machines found in tracking file")
+            return jsonify({'message': 'No deployed machines found'}), 200
+        
+        results = []
+        success_count = 0
+        
+        for i, machine in enumerate(machines, 1):
+            machine_id = machine.get('id')
+            machine_name = machine.get('name', 'Unknown')
+            
+            logging.info(f"[{i}/{len(machines)}] Processing machine: {machine_name} (ID: {machine_id})")
+            
+            # Extract VM ID from machine config - try multiple sources
+            vm_id = None
+            config = machine.get('config', {})
+            
+            # Check multiple possible locations for VM ID
+            if 'vm_id' in config:
+                vm_id = config['vm_id']
+                logging.info(f"  Found VM ID in config.vm_id: {vm_id}")
+            elif 'vmid' in config:
+                vm_id = config['vmid']
+                logging.info(f"  Found VM ID in config.vmid: {vm_id}")
+            elif 'id' in config:
+                vm_id = config['id']
+                logging.info(f"  Found VM ID in config.id: {vm_id}")
+            else:
+                # Try to extract from deployment result
+                deployment_result = machine.get('deployment_result', {})
+                output = deployment_result.get('output', '')
+                
+                # Try to extract VM ID from terraform output
+                import re
+                vm_id_match = re.search(r'vm_id\s*=\s*(\d+)', output)
+                if vm_id_match:
+                    vm_id = int(vm_id_match.group(1))
+                    logging.info(f"  Extracted VM ID from deployment output: {vm_id}")
+                else:
+                    logging.warning(f"  No VM ID found for machine {machine_name}")
+            
+            if vm_id:
+                try:
+                    # Check if the container is already running
+                    from proxmoxer import ProxmoxAPI
+                    import urllib3
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                    proxmox_server = deployment_service.config_manager.get("PROXMOX_SERVER")
+                    proxmox_token = deployment_service.config_manager.get("PVEAPITOKEN")
+                    proxmox_node = deployment_service.config_manager.get("NODE")
+                    user_realm, token_rest = proxmox_token.split("!", 1)
+                    token_name, token_value = token_rest.split("=", 1)
+                    proxmox = ProxmoxAPI(
+                        proxmox_server,
+                        user=user_realm,
+                        token_name=token_name,
+                        token_value=token_value,
+                        verify_ssl=False
+                    )
+                    ct = proxmox.nodes(proxmox_node).lxc(int(vm_id))
+                    status = ct.status.current.get()
+                    if status.get('status') == 'running':
+                        logging.info(f"  ℹ️  {machine_name} (VM ID: {vm_id}) is already running.")
+                        results.append({
+                            'machine_id': machine_id,
+                            'machine_name': machine_name,
+                            'vm_id': vm_id,
+                            'status': 'already_running',
+                            'message': f'{machine_name} is already running.'
+                        })
+                        continue
+
+                    logging.info(f"  Attempting to boot VM/Container with ID: {vm_id}")
+                    
+                    # Use the deployment service's boot method
+                    boot_success = deployment_service._start_vm_via_proxmox_api(vm_id)
+                    
+                    if boot_success:
+                        # Fetch eth0 IP using proxmoxer with comprehensive logging
+                        try:
+                            from proxmoxer import ProxmoxAPI
+                            import urllib3
+                            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                            proxmox_server = deployment_service.config_manager.get("PROXMOX_SERVER")
+                            proxmox_token = deployment_service.config_manager.get("PVEAPITOKEN")
+                            proxmox_node = deployment_service.config_manager.get("NODE")
+                            user_realm, token_rest = proxmox_token.split("!", 1)
+                            token_name, token_value = token_rest.split("=", 1)
+                            proxmox = ProxmoxAPI(
+                                proxmox_server,
+                                user=user_realm,
+                                token_name=token_name,
+                                token_value=token_value,
+                                verify_ssl=False
+                            )
+                            
+                            # Wait a moment for container to fully start
+                            import time
+                            time.sleep(3)
+                            
+                            # Try multiple methods to get the IP
+                            eth0_ip = None
+                            
+                            # Method 1: Try /interfaces endpoint
+                            try:
+                                logging.info(f"  Attempting to fetch interfaces for VM {vm_id}...")
+                                interfaces = proxmox.nodes(proxmox_node).lxc(int(vm_id)).interfaces.get()
+                                logging.info(f"  Raw interfaces response: {interfaces}")
+                                
+                                for iface in interfaces:
+                                    logging.info(f"    Interface: {iface}")
+                                    if iface.get('name') == 'eth0':
+                                        inet = iface.get('inet')
+                                        inet6 = iface.get('inet6')
+                                        logging.info(f"      eth0 inet: {inet}, inet6: {inet6}")
+                                        if inet and '.' in str(inet) and not str(inet).startswith('127.'):
+                                            eth0_ip = str(inet).split('/')[0]
+                                            logging.info(f"      Found valid IP from inet: {eth0_ip}")
+                                            break
+                            except Exception as e:
+                                logging.error(f"  Error with /interfaces endpoint: {e}")
+                            
+                            # Method 2: Try /status/current endpoint
+                            if not eth0_ip:
+                                try:
+                                    logging.info(f"  Trying /status/current for VM {vm_id}...")
+                                    status = proxmox.nodes(proxmox_node).lxc(int(vm_id)).status.current.get()
+                                    logging.info(f"  Status response: {status}")
+                                    # Look for any IP-like data in status
+                                    for key, value in status.items():
+                                        if 'ip' in key.lower() and isinstance(value, str) and '.' in value:
+                                            if not value.startswith('127.') and value != 'dhcp':
+                                                eth0_ip = value.split('/')[0]
+                                                logging.info(f"      Found IP in status.{key}: {eth0_ip}")
+                                                break
+                                except Exception as e:
+                                    logging.error(f"  Error with /status/current endpoint: {e}")
+                            
+                            # Method 3: Try /config endpoint
+                            if not eth0_ip:
+                                try:
+                                    logging.info(f"  Trying /config for VM {vm_id}...")
+                                    config = proxmox.nodes(proxmox_node).lxc(int(vm_id)).config.get()
+                                    logging.info(f"  Config response: {config}")
+                                    # Look for network config with actual IP
+                                    for key, value in config.items():
+                                        if key.startswith('net') and isinstance(value, str):
+                                            logging.info(f"      Network config {key}: {value}")
+                                            if 'ip=' in value and 'dhcp' not in value.lower():
+                                                import re
+                                                ip_match = re.search(r'ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', value)
+                                                if ip_match:
+                                                    eth0_ip = ip_match.group(1)
+                                                    logging.info(f"      Found IP in config.{key}: {eth0_ip}")
+                                                    break
+                                except Exception as e:
+                                    logging.error(f"  Error with /config endpoint: {e}")
+                            
+                            # Method 4: Use health check service as fallback
+                            if not eth0_ip:
+                                logging.info(f"  Trying health check service for VM {vm_id}...")
+                                health_info = health_check_service.get_machine_ip_from_proxmox(machine_id, vm_id)
+                                if health_info and health_info.get('ip_address'):
+                                    potential_ip = health_info['ip_address']
+                                    if potential_ip and '.' in potential_ip and not potential_ip.startswith('127.') and potential_ip.lower() not in ('dhcp', 'static', 'unknown'):
+                                        eth0_ip = potential_ip
+                                        logging.info(f"      Found IP via health check: {eth0_ip}")
+                            
+                            # If no real IP found, use config type as fallback
+                            if not eth0_ip or eth0_ip.lower() in ('dhcp', 'static', 'unknown'):
+                                adv = config.get('advanced', {})
+                                fallback_value = adv.get('ip_mode', 'Unknown')
+                                logging.info(f"  No real IP found, using fallback: {fallback_value}")
+                                eth0_ip = fallback_value
+                            
+                            # Update the machine status
+                            tracking_service.update_machine_status(machine_id, 'running', eth0_ip)
+                            logging.info(f"  ✅ Updated {machine_name} (ID: {machine_id}) with IP/type: {eth0_ip}")
+                            
+                        except Exception as e:
+                            logging.error(f"  ❌ Error fetching IP for {machine_name} (ID: {machine_id}): {e}")
+                            # Still update with fallback
+                            adv = config.get('advanced', {})
+                            fallback_value = adv.get('ip_mode', 'Unknown')
+                            tracking_service.update_machine_status(machine_id, 'running', fallback_value)
+                            logging.info(f"  Updated {machine_name} with fallback: {fallback_value}")
+                        success_count += 1
+                        logging.info(f"  ✅ Successfully started {machine_name} (VM ID: {vm_id})")
+                        results.append({
+                            'machine_id': machine_id,
+                            'machine_name': machine_name,
+                            'vm_id': vm_id,
+                            'status': 'success',
+                            'message': f'Successfully started {machine_name}'
+                        })
+                    else:
+                        logging.error(f"  ❌ Failed to start {machine_name} (VM ID: {vm_id})")
+                        results.append({
+                            'machine_id': machine_id,
+                            'machine_name': machine_name,
+                            'vm_id': vm_id,
+                            'status': 'failed',
+                            'message': f'Failed to start {machine_name}'
+                        })
+                except Exception as e:
+                    logging.error(f"  ❌ Error starting {machine_name} (VM ID: {vm_id}): {str(e)}")
+                    results.append({
+                        'machine_id': machine_id,
+                        'machine_name': machine_name,
+                        'vm_id': vm_id,
+                        'status': 'error',
+                        'message': f'Error starting {machine_name}: {str(e)}'
+                    })
+            else:
+                logging.warning(f"  ⚠️  Skipping {machine_name} - No VM ID found")
+                results.append({
+                    'machine_id': machine_id,
+                    'machine_name': machine_name,
+                    'vm_id': None,
+                    'status': 'skipped',
+                    'message': f'No VM ID found for {machine_name}'
+                })
+        
+        num_running = sum(1 for r in results if r['status'] in ('success', 'already_running'))
+        final_message = f'Boot operation completed. {num_running}/{len(machines)} machines are running (started or already running).'
+        logging.info(f"=== Boot operation completed: {num_running}/{len(machines)} running ===")
+        
+        return jsonify({
+            'message': final_message,
+            'total_machines': len(machines),
+            'success_count': num_running,
+            'results': results
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error booting all machines: {e}", exc_info=True)
+        return jsonify({'error': f'Failed to boot machines: {str(e)}'}), 500
+
+
+@app.route('/check-deployed-machines', methods=['GET'])
+def check_deployed_machines():
+    """Check if deployed machines exist for enabling/disabling boot button"""
+    try:
+        machines = tracking_service.get_deployed_machines()
+        has_machines = len(machines) > 0
+        
+        return jsonify({
+            'has_machines': has_machines,
+            'machine_count': len(machines)
+        }), 200
+        
+    except Exception as e:
+        logging.error(f"Error checking deployed machines: {e}", exc_info=True)
+        return jsonify({
+            'has_machines': False,
+            'machine_count': 0,
+            'error': str(e)
+        }), 200  # Return 200 so frontend can handle gracefully
+
+
+@app.route('/refresh-ips', methods=['POST'])
+def refresh_ips():
+    """Simple endpoint to refresh IPs for all deployed machines"""
+    try:
+        machines = tracking_service.get_deployed_machines()
+        if not machines:
+            return jsonify({'message': 'No deployed machines found'}), 200
+        
+        updated_count = 0
+        results = []
+        
+        # Get Proxmox config
+        proxmox_server = config_manager.get("PROXMOX_SERVER")
+        proxmox_token = config_manager.get("PVEAPITOKEN")
+        proxmox_node = config_manager.get("NODE")
+        
+        if not all([proxmox_server, proxmox_token, proxmox_node]):
+            return jsonify({'error': 'Missing Proxmox configuration'}), 500
+        
+        # Parse token for proxmoxer
+        try:
+            user_realm, token_rest = proxmox_token.split("!", 1)
+            token_name, token_value = token_rest.split("=", 1)
+        except Exception as e:
+            return jsonify({'error': f'Invalid Proxmox token format: {e}'}), 500
+        
+        # Initialize proxmoxer
+        try:
+            from proxmoxer import ProxmoxAPI
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            
+            proxmox = ProxmoxAPI(
+                proxmox_server,
+                user=user_realm,
+                token_name=token_name,
+                token_value=token_value,
+                verify_ssl=False
+            )
+        except Exception as e:
+            return jsonify({'error': f'Failed to connect to Proxmox: {e}'}), 500
+        
+        for machine in machines:
+            machine_id = machine.get('id')
+            machine_name = machine.get('name', 'Unknown')
+            vm_id = machine_id  # Use machine ID as VM ID
+            
+            try:
+                real_ip = None
+                
+                # Method 1: Try interfaces endpoint
+                try:
+                    interfaces = proxmox.nodes(proxmox_node).lxc(int(vm_id)).interfaces.get()
+                    
+                    for iface in interfaces:
+                        if iface.get('name') == 'eth0':
+                            inet = iface.get('inet')
+                            if inet and '.' in str(inet) and not str(inet).startswith('127.'):
+                                real_ip = str(inet).split('/')[0]
+                                break
+                except Exception as e:
+                    logging.warning(f"Interfaces call failed for {vm_id}: {e}")
+                
+                # Method 2: Try config endpoint if interfaces didn't work
+                if not real_ip:
+                    try:
+                        config = proxmox.nodes(proxmox_node).lxc(int(vm_id)).config.get()
+                        
+                        for key, value in config.items():
+                            if key.startswith('net') and 'ip=' in str(value) and 'dhcp' not in str(value).lower():
+                                import re
+                                ip_match = re.search(r'ip=([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', str(value))
+                                if ip_match:
+                                    real_ip = ip_match.group(1)
+                                    break
+                    except Exception as e:
+                        logging.warning(f"Config call failed for {vm_id}: {e}")
+                
+                # Update machine status
+                if real_ip:
+                    tracking_service.update_machine_status(machine_id, 'running', real_ip)
+                    updated_count += 1
+                    results.append(f"{machine_name}: {real_ip}")
+                else:
+                    current_ip = machine.get('ip_address', 'dhcp')
+                    results.append(f"{machine_name}: {current_ip} (no IP found)")
+                    
+            except Exception as e:
+                results.append(f"{machine_name}: error - {str(e)}")
+        
+        return jsonify({
+            'message': f'Refreshed IPs for {updated_count}/{len(machines)} machines',
+            'results': results,
+            'total_machines': len(machines),
+            'updated_count': updated_count
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to refresh IPs: {str(e)}'}), 500
+
+
+@app.route('/ping', methods=['GET'])
+def ping_machine():
+    machine_id = request.args.get('machine_id')
+    if not machine_id:
+        return jsonify({'success': False, 'error': 'Missing machine_id'}), 400
+    tracking_service = get_tracking_service()
+    machine = tracking_service.get_machine_by_id(machine_id)
+    if not machine or not machine.get('ip_address'):
+        return jsonify({'success': False, 'error': 'Machine or IP not found'}), 404
+    config_manager = get_config_manager()
+    health_check_service = HealthCheckService(config_manager)
+    ip = machine['ip_address']
+    reachable = health_check_service.ping_machine(ip)
+    return jsonify({'success': True, 'ip_address': ip, 'reachable': reachable})
 
 
 if __name__ == '__main__':
