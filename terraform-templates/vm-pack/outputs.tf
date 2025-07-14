@@ -1,73 +1,74 @@
 output "vm_ids" {
-  description = "The VMIDs of the created VMs/Containers"
-  value       = concat(module.vm_pack_container[*].vm_id, module.vm_pack_vm[*].vm_id)
+  description = "The VMIDs of the created containers"
+  value       = proxmox_lxc.container[*].vmid
 }
 
 output "vm_names" {
-  description = "The names of the created VMs/Containers"
-  value       = concat(module.vm_pack_container[*].vm_name, module.vm_pack_vm[*].vm_name)
+  description = "The names of the created containers"
+  value       = proxmox_lxc.container[*].hostname
 }
 
 output "vm_nodes" {
-  description = "The Proxmox nodes where the VMs/Containers are running"
-  value       = concat(module.vm_pack_container[*].vm_node, module.vm_pack_vm[*].vm_node)
+  description = "The Proxmox nodes where the containers are running"
+  value       = proxmox_lxc.container[*].target_node
 }
 
 output "vm_ip_addresses" {
-  description = "The IP addresses of the VMs/Containers (if available)"
-  value       = concat(module.vm_pack_container[*].vm_ip_address, module.vm_pack_vm[*].vm_ip_address)
+  description = "The IP addresses of the containers (if available)"
+  value       = [for container in proxmox_lxc.container : container.network[0].ip]
 }
 
 output "vm_mac_addresses" {
-  description = "The MAC addresses of the VMs/Containers' primary network interfaces"
-  value       = concat(module.vm_pack_container[*].vm_mac_address, module.vm_pack_vm[*].vm_mac_address)
+  description = "The MAC addresses of the containers' primary network interfaces"
+  value       = [for container in proxmox_lxc.container : container.network[0].hwaddr]
 }
 
 output "vm_ssh_connections" {
-  description = "SSH connection information for the VMs/Containers"
-  value       = concat(module.vm_pack_container[*].vm_ssh_connection, module.vm_pack_vm[*].vm_ssh_connection)
+  description = "SSH connection details for the containers"
+  value = [
+    for container in proxmox_lxc.container : {
+      host    = split("/", container.network[0].ip)[0]
+      port    = 22
+      user    = var.username
+      command = "ssh ${var.username}@${split("/", container.network[0].ip)[0]}"
+    }
+  ]
 }
 
 output "vm_template_used" {
-  description = "The template used to create these VMs"
+  description = "The template used to create these containers"
   value       = var.template_name
 }
 
 output "vm_resource_summary" {
-  description = "Summary of VM pack resources"
+  description = "Summary of container pack resources"
   value = {
     vm_count = var.vm_count
     cores_per_vm = var.cores
     memory_per_vm = var.memory
+    swap_per_vm = var.swap
     disk_per_vm = var.disk_size
-    storage = "local-lvm"
+    storage = var.storage_pool
     start_vmid = var.start_vmid
     base_name = var.base_name
   }
 }
 
 output "vm_pack_details" {
-  description = "Detailed information about each VM/Container in the pack"
-  value = concat(
-    [
-      for i, vm in module.vm_pack_container : {
-        index = i
-        name = vm.vm_name
-        id = vm.vm_id
-        ip = vm.vm_ip_address
-        mac = vm.vm_mac_address
-        ssh_connection = vm.vm_ssh_connection
+  description = "Detailed information about each container in the pack"
+  value = [
+    for i, container in proxmox_lxc.container : {
+      index = i
+      name = container.hostname
+      id = container.vmid
+      ip = split("/", container.network[0].ip)[0]
+      mac = container.network[0].hwaddr
+      ssh_connection = {
+        host    = split("/", container.network[0].ip)[0]
+        port    = 22
+        user    = var.username
+        command = "ssh ${var.username}@${split("/", container.network[0].ip)[0]}"
       }
-    ],
-    [
-      for i, vm in module.vm_pack_vm : {
-        index = i
-        name = vm.vm_name
-        id = vm.vm_id
-        ip = vm.vm_ip_address
-        mac = vm.vm_mac_address
-        ssh_connection = vm.vm_ssh_connection
-      }
-    ]
-  )
+    }
+  ]
 } 

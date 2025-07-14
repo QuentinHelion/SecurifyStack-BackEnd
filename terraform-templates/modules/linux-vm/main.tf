@@ -22,6 +22,7 @@ resource "proxmox_vm_qemu" "vm" {
   cpu     = var.cpu_type
   bios    = var.bios
   numa    = var.numa_enabled
+  os_type = var.os_type
   
   # Disk Configuration
   disk {
@@ -46,6 +47,9 @@ resource "proxmox_vm_qemu" "vm" {
   
   # SSH Configuration
   sshkeys = var.ssh_keys != "" ? var.ssh_keys : null
+  
+  # User Configuration
+  ciuser = var.username
   
   # VM Settings
   onboot        = var.start_on_boot

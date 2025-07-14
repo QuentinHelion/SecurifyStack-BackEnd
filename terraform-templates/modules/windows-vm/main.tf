@@ -44,6 +44,10 @@ resource "proxmox_vm_qemu" "vm" {
   # IP Configuration (if static)
   ipconfig0 = var.network_config == "static" ? "ip=${var.ip_address}/${var.subnet_mask},gw=${var.gateway}" : null
   
+  # User Configuration
+  ciuser = var.username
+  cipassword = var.password != "" ? var.password : null
+  
   # VM Settings
   onboot        = var.start_on_boot
   protection    = var.protection

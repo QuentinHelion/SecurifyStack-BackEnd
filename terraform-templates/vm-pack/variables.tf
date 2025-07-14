@@ -28,17 +28,17 @@ variable "base_name" {
 }
 
 variable "vm_count" {
-  description = "Number of VMs to create"
+  description = "Number of containers to create"
   type        = number
   default     = 1
   validation {
     condition     = var.vm_count >= 1 && var.vm_count <= 10
-    error_message = "VM count must be between 1 and 10."
+    error_message = "Container count must be between 1 and 10."
   }
 }
 
 variable "start_vmid" {
-  description = "Starting VMID for the VM pack"
+  description = "Starting VMID for the container pack"
   type        = number
   default     = 5000
   validation {
@@ -48,28 +48,40 @@ variable "start_vmid" {
 }
 
 variable "template_name" {
-  description = "Template to clone from"
+  description = "Container template to use"
   type        = string
 }
 
-# VM Configuration Variables
+# Container Configuration Variables
 variable "cores" {
-  description = "Number of CPU cores per VM"
+  description = "Number of CPU cores per container"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "memory" {
-  description = "Memory in MB per VM"
+  description = "Memory in MB per container"
   type        = number
-  default     = 2048
+  default     = 512
 }
 
-# Disk Configuration
-variable "disk_size" {
-  description = "Disk size in GB per VM"
+variable "swap" {
+  description = "Swap in MB per container"
   type        = number
-  default     = 20
+  default     = 512
+}
+
+# Storage Configuration
+variable "disk_size" {
+  description = "Root filesystem size in GB per container"
+  type        = number
+  default     = 8
+}
+
+variable "storage_pool" {
+  description = "Storage pool name"
+  type        = string
+  default     = "local-lvm"
 }
 
 # Network Configuration
@@ -85,10 +97,10 @@ variable "network_tag" {
   default     = 0
 }
 
-variable "gateway" {
-  description = "Gateway IP address"
-  type        = string
-  default     = "192.168.1.1"
+variable "network_firewall" {
+  description = "Enable firewall on network interface"
+  type        = bool
+  default     = false
 }
 
 variable "nameserver" {
@@ -99,9 +111,16 @@ variable "nameserver" {
 
 # User Configuration
 variable "username" {
-  description = "Username for the VMs"
+  description = "Username for the containers"
   type        = string
-  default     = "user"
+  default     = "root"
+}
+
+variable "password" {
+  description = "Password for the containers"
+  type        = string
+  default     = "rootroot"
+  sensitive   = true
 }
 
 variable "ssh_keys" {
@@ -109,4 +128,17 @@ variable "ssh_keys" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+# Container Settings
+variable "start_on_boot" {
+  description = "Start container on boot"
+  type        = bool
+  default     = true
+}
+
+variable "tags" {
+  description = "Tags for the containers"
+  type        = string
+  default     = ""
 } 

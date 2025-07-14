@@ -204,7 +204,7 @@ variable "unprivileged" {
 variable "start_on_creation" {
   description = "Start container after creation"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "start_on_boot" {
@@ -214,20 +214,19 @@ variable "start_on_boot" {
 }
 
 variable "protection" {
-  description = "Protection flag"
+  description = "Protect container from deletion"
   type        = bool
   default     = false
 }
 
-# Console Settings
 variable "console_enabled" {
-  description = "Enable console"
+  description = "Enable console access"
   type        = bool
   default     = true
 }
 
 variable "tty_count" {
-  description = "Number of TTYs"
+  description = "Number of TTY consoles"
   type        = number
   default     = 2
   validation {
@@ -248,25 +247,25 @@ variable "console_mode" {
 
 # Container Features
 variable "features_fuse" {
-  description = "Enable FUSE"
+  description = "Enable FUSE support"
   type        = bool
   default     = false
 }
 
 variable "features_keyctl" {
-  description = "Enable keyctl"
+  description = "Enable keyctl support"
   type        = bool
   default     = false
 }
 
 variable "features_mount" {
-  description = "Enable mount"
+  description = "Enable mount support"
   type        = bool
   default     = false
 }
 
 variable "features_nesting" {
-  description = "Enable nesting"
+  description = "Enable nesting support"
   type        = bool
   default     = false
 }

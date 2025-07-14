@@ -5,6 +5,10 @@ import shutil
 from pathlib import Path
 import logging
 import re
+import requests
+import urllib3
+from .deployment_tracking_service import DeploymentTrackingService
+from .health_check_service import HealthCheckService
 
 class DeploymentService:
     def __init__(self, config_manager):
@@ -13,6 +17,10 @@ class DeploymentService:
         self.base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         self.deployments_base_path = os.path.join(self.base_path, "deployments")
         self.templates_path = os.path.join(self.base_path, "terraform-templates")
+        
+        # Initialize tracking and health check services
+        self.tracking_service = DeploymentTrackingService(config_manager)
+        self.health_check_service = HealthCheckService(config_manager)
         
         # Ensure directories exist
         os.makedirs(self.deployments_base_path, exist_ok=True)
@@ -78,7 +86,75 @@ class DeploymentService:
             json.dump(machine, f, indent=2)
         
         # Run Terraform
-        return self._run_terraform(deployment_dir, machine_name)
+        result = self._run_terraform(deployment_dir, machine_name)
+        
+        # If deployment was successful, add to tracking
+        if result["success"]:
+            try:
+                self.tracking_service.add_deployed_machine(machine, result)
+                logging.info(f"✅ {machine_name} deployed successfully! Use the dashboard buttons to start and get IP.")
+                
+            except Exception as e:
+                logging.error(f"Error adding machine to tracking: {e}")
+        
+        return result
+
+    def _start_vm_via_proxmox_api(self, vm_id):
+        """Start a container (CT) using Proxmox API via proxmoxer (always use /lxc endpoint)"""
+        try:
+            from proxmoxer import ProxmoxAPI
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+            proxmox_server = self.config_manager.get("PROXMOX_SERVER")
+            proxmox_token = self.config_manager.get("PVEAPITOKEN")
+            proxmox_node = self.config_manager.get("NODE")
+
+            if not all([proxmox_server, proxmox_token, proxmox_node]):
+                logging.error("Missing Proxmox configuration for CT start")
+                return False
+
+            # Parse token: user@realm!tokenid=tokenvalue
+            try:
+                user_realm, token_rest = proxmox_token.split("!", 1)
+                token_name, token_value = token_rest.split("=", 1)
+            except Exception as e:
+                logging.error(f"Invalid Proxmox token format: {proxmox_token} ({e})")
+                return False
+
+            try:
+                proxmox = ProxmoxAPI(
+                    proxmox_server,
+                    user=user_realm,
+                    token_name=token_name,
+                    token_value=token_value,
+                    verify_ssl=False
+                )
+            except Exception as e:
+                logging.error(f"Failed to connect to Proxmox API: {e}")
+                return False
+
+            try:
+                # Check if the container exists
+                ct = proxmox.nodes(proxmox_node).lxc(vm_id)
+                status = ct.status.current.get()
+                logging.info(f"Container {vm_id} status: {status.get('status')}")
+            except Exception as e:
+                logging.error(f"Container {vm_id} not found on node {proxmox_node}: {e}")
+                return False
+
+            try:
+                # Start the container
+                ct.status.start.post()
+                logging.info(f"Successfully started container {vm_id}")
+                return True
+            except Exception as e:
+                logging.error(f"Failed to start container {vm_id}: {e}")
+                return False
+
+        except Exception as e:
+            logging.error(f"Error starting container {vm_id}: {e}")
+            return False
 
     def _get_template_type(self, machine):
         """Determine which Terraform template to use"""
@@ -140,11 +216,11 @@ class DeploymentService:
             logging.error(f"Modules link not created: {modules_link}")
 
     def _find_next_available_vmid(self):
-        """Find the next available VMID starting from 5000"""
+        """Find a random available VMID between 5000-7000"""
         try:
-            # Start from 5000 as requested
+            # Random VMID range as requested
             MIN_VMID = 5000
-            MAX_VMID = 999999
+            MAX_VMID = 7000
             
             # Get existing VMIDs from Proxmox API
             existing_vmids = set()
@@ -219,21 +295,25 @@ class DeploymentService:
                             except Exception as e:
                                 logging.warning(f"Could not read terraform.tfvars from {deployment_path}: {e}")
             
-            # Find the next available VMID starting from 5000
+            # Find a random available VMID between 5000-7000
+            import random
+            available_vmids = [vmid for vmid in range(MIN_VMID, MAX_VMID + 1) if vmid not in existing_vmids]
+            
+            if available_vmids:
+                selected_vmid = random.choice(available_vmids)
+                logging.info(f"Found random available VMID: {selected_vmid}")
+                return selected_vmid
+            
+            # If all VMIDs in range are taken, log error and use random fallback
+            logging.error(f"All VMIDs in range {MIN_VMID}-{MAX_VMID} are taken!")
+            # Try to find any available VMID in the range
             for vmid in range(MIN_VMID, MAX_VMID + 1):
                 if vmid not in existing_vmids:
-                    logging.info(f"Found available VMID: {vmid}")
+                    logging.warning(f"Using fallback VMID: {vmid}")
                     return vmid
             
-            # If all VMIDs are taken (unlikely), start from the next available
-            if existing_vmids:
-                next_vmid = max(existing_vmids) + 1
-                if next_vmid <= MAX_VMID:
-                    logging.warning(f"All VMIDs in range taken, using next sequential: {next_vmid}")
-                    return next_vmid
-            
-            # Fallback to minimum VMID
-            logging.warning(f"No VMIDs available, using minimum: {MIN_VMID}")
+            # Final fallback to minimum VMID
+            logging.warning(f"No VMIDs available in range, using minimum: {MIN_VMID}")
             return MIN_VMID
             
         except Exception as e:
@@ -241,7 +321,7 @@ class DeploymentService:
             return 5000  # Fallback to default
 
     def _find_vmid_range_for_pack(self, count):
-        """Find a range of available VMIDs for VM packs starting from 5000"""
+        """Find a range of available VMIDs for VM packs in range 5000-7000"""
         try:
             # Get existing VMIDs
             existing_vmids = set()
@@ -307,9 +387,9 @@ class DeploymentService:
                             except Exception as e:
                                 logging.warning(f"Could not read terraform.tfvars from {deployment_path}: {e}")
             
-            # Find a range of available VMIDs starting from 5000
+            # Find a range of available VMIDs in range 5000-7000
             start_vmid = 5000
-            max_vmid = 999999
+            max_vmid = 7000
             
             for vmid in range(start_vmid, max_vmid - count + 1):
                 # Check if the range [vmid, vmid + count - 1] is available
@@ -352,12 +432,17 @@ class DeploymentService:
         
         # Common variables
         tfvars = {
-            "vm_name": vm_name,
-            "vm_id": advanced.get("vmid", next_vmid),
             "proxmox_server": self.config_manager.get("PROXMOX_SERVER"),
             "proxmox_token": self.config_manager.get("PVEAPITOKEN"),
             "proxmox_node": self.config_manager.get("NODE"),
         }
+        
+        # Add vm_name and vm_id only for non-vmPack types
+        if base_type != "vmPack":
+            tfvars.update({
+                "vm_name": vm_name,
+                "vm_id": advanced.get("vmid", next_vmid),
+            })
         
         # Type-specific variables
         if base_type == "linuxServer":
@@ -369,11 +454,11 @@ class DeploymentService:
                 "cores": self._get_cores_from_perf(advanced.get("perf", "medium")),
                 "memory": self._get_memory_from_perf(advanced.get("perf", "medium")),
                 "disk_size": self._get_disk_from_perf(advanced.get("perf", "medium")),
-                "username": advanced.get("username", "user"),
+                "username": advanced.get("username", "root"),
                 "ssh_keys": advanced.get("sshKey", ""),  # New variable name
                 "ssh_key": advanced.get("sshKey", ""),   # Legacy compatibility
                 "network_bridge": "vmbr0",
-                "network_tag": 10,
+                "network_tag": 0,  # Remove VLAN tag
             })
             
             # IP configuration
@@ -403,8 +488,9 @@ class DeploymentService:
                 "cores": self._get_cores_from_perf(advanced.get("perf", "medium")),
                 "memory": self._get_memory_from_perf(advanced.get("perf", "medium")),
                 "disk_size": self._get_disk_from_perf(advanced.get("perf", "medium")),
+                "username": advanced.get("username", "Administrator"),
                 "network_bridge": "vmbr0",
-                "network_tag": 10,
+                "network_tag": 0,  # Remove VLAN tag
                 "nameserver": "8.8.8.8",
             })
             
@@ -424,12 +510,14 @@ class DeploymentService:
                 "cores": 2,
                 "memory": 2048,
                 "disk_size": 20,
+                "swap": 512,
                 "network_bridge": "vmbr0",
-                "network_tag": 10,
+                "network_tag": 0,  # Remove VLAN tag
                 "gateway": "192.168.1.1",
                 "nameserver": "8.8.8.8",
-                "username": "user",
-                "ssh_keys": "",
+                "username": advanced.get("username", "root"),
+                "password": advanced.get("password", "rootroot"),
+                "ssh_keys": advanced.get("sshKey", ""),
             })
         
         # Convert to terraform.tfvars format
@@ -592,6 +680,9 @@ class DeploymentService:
             # Remove deployment directory
             shutil.rmtree(deployment_dir)
             
+            # Remove from tracking
+            self.tracking_service.remove_machine(machine_id)
+            
             return {
                 "success": True,
                 "message": f"🗑️  Successfully destroyed {machine_id}",
@@ -709,3 +800,61 @@ class DeploymentService:
         message += "\n".join(machines)
         
         return message.strip() 
+    
+    def update_machine(self, machine_id, updated_config):
+        """Update an existing machine using its terraform state"""
+        try:
+            deployment_dir = f"{self.deployments_base_path}/{machine_id}"
+            
+            if not os.path.exists(deployment_dir):
+                return {
+                    "success": False,
+                    "message": f"Deployment directory not found for machine {machine_id}"
+                }
+            
+            # Load existing machine config
+            config_path = f"{deployment_dir}/machine_config.json"
+            if os.path.exists(config_path):
+                with open(config_path, 'r') as f:
+                    existing_config = json.load(f)
+                
+                # Merge updated config with existing config
+                merged_config = {**existing_config, **updated_config}
+                
+                # Save updated config
+                with open(config_path, 'w') as f:
+                    json.dump(merged_config, f, indent=2)
+                
+                # Generate new terraform.tfvars
+                tfvars_content = self._generate_tfvars(merged_config)
+                tfvars_path = f"{deployment_dir}/terraform.tfvars"
+                
+                with open(tfvars_path, 'w') as f:
+                    f.write(tfvars_content)
+                
+                # Run terraform apply to update the machine
+                result = self._run_terraform(deployment_dir, merged_config["name"])
+                
+                if result["success"]:
+                    # Update tracking with new config
+                    self.tracking_service.add_deployed_machine(merged_config, result)
+                    
+                    return {
+                        "success": True,
+                        "message": f"✅ Successfully updated {merged_config['name']}",
+                        "output": result.get("output", "")
+                    }
+                else:
+                    return result
+            else:
+                return {
+                    "success": False,
+                    "message": f"Machine configuration not found for {machine_id}"
+                }
+                
+        except Exception as e:
+            logging.error(f"Error updating machine {machine_id}: {e}")
+            return {
+                "success": False,
+                "message": f"Error updating machine: {str(e)}"
+            } 

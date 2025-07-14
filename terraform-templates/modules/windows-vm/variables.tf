@@ -38,6 +38,13 @@ variable "username" {
   default     = "Administrator"
 }
 
+variable "password" {
+  description = "Password for the Windows VM"
+  type        = string
+  default     = "rootroot"
+  sensitive   = true
+}
+
 # VM Configuration
 variable "cores" {
   description = "Number of CPU cores"

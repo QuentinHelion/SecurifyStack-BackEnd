@@ -126,7 +126,6 @@ variable "network_bridge" {
 variable "network_tag" {
   description = "VLAN tag (0 for no tag)"
   type        = number
-  default     = 0
 }
 
 variable "network_firewall" {
@@ -175,13 +174,13 @@ variable "search_domain" {
 variable "username" {
   description = "Username for the VM"
   type        = string
-  default     = "user"
+  default     = "root"
 }
 
 variable "password" {
   description = "Password for the user"
   type        = string
-  default     = ""
+  default     = "rootroot"
   sensitive   = true
 }
 

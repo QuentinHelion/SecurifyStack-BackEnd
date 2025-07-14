@@ -23,6 +23,11 @@ output "ct_template_used" {
   value       = module.linux_ct.ct_template_used
 }
 
+output "ct_ip_address" {
+  description = "The IP address of the container (if available)"
+  value       = module.linux_ct.ct_ip_address
+}
+
 output "ct_network_info" {
   description = "Network configuration of the container"
   value       = module.linux_ct.ct_network_info
