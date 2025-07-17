@@ -46,7 +46,7 @@ from application.services.health_check_service import HealthCheckService
 args_checker = Args()
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["https://securify-stack.homelab"]}})
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 config_manager = ConfigManager()
 terraform_service = TerraformService(config_manager)
